@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Afinador de Paleta</title>
+  <meta name="description" content="Valida la armonía y el contraste de una paleta de colores en OKLCH y propone sustitutos para los colores que no cuadran.">
+  <meta property="og:title" content="Afinador de Paleta">
+  <meta property="og:description" content="Armonía + contraste en OKLCH, con sustitutos listos para aplicar.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%232B5F5A'/%3E%3Ccircle cx='16' cy='16' r='5' fill='%23F4F3F7'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Afinador de Paleta</h1>
+    <p>Mide cada color en OKLCH contra una regla armónica y el contraste sobre tu fondo. Lo que no cuadra sale marcado, con sustitutos listos.</p>
+  </header>
+
+  <div class="layout">
+    <aside class="panel stack">
+      <div>
+        <label class="lbl" for="colors">Colores (hex, uno por línea o separados por coma)</label>
+        <textarea id="colors" spellcheck="false">#C9A96E
+#8A9A7B
+#F2E8DC
+#3B3A36
+#2F6BB0</textarea>
+        <p class="hint" style="margin-top:6px">Ejemplo precargado: cuatro tonos de una paleta cálida y un azul que no pertenece.</p>
+      </div>
+      <div>
+        <label class="lbl" for="bg">Fondo para contraste</label>
+        <div class="row">
+          <div class="swatch-in" id="bgSw"></div>
+          <input class="grow" type="text" id="bg" value="#F2E8DC" spellcheck="false">
+        </div>
+      </div>
+      <div>
+        <label class="lbl" for="rule">Regla armónica</label>
+        <select id="rule">
+          <option value="auto">Detectar automáticamente</option>
+          <option value="mono">Monocromática</option>
+          <option value="analog">Análoga (±30°)</option>
+          <option value="comp">Complementaria (180°)</option>
+          <option value="split">Complementaria dividida (150° / 210°)</option>
+          <option value="tri">Triádica (120°)</option>
+          <option value="tetra">Tetrádica (90°)</option>
+        </select>
+      </div>
+      <div>
+        <label class="lbl" for="tol">Tolerancia de tono <span class="tol-val" id="tolVal">12°</span></label>
+        <input type="range" id="tol" min="4" max="30" step="1" value="12">
+      </div>
+      <div>
+        <label class="lbl" for="wcag">Contraste mínimo</label>
+        <select id="wcag">
+          <option value="3">3:1 — texto grande / UI (AA)</option>
+          <option value="4.5" selected>4.5:1 — texto normal (AA)</option>
+          <option value="7">7:1 — texto normal (AAA)</option>
+        </select>
+      </div>
+      <div class="row">
+        <button class="primary" id="run">Analizar</button>
+        <button id="reset">Restaurar ejemplo</button>
+      </div>
+      <div>
+        <label class="lbl">Rueda de tono (radio = croma)</label>
+        <svg class="wheel" id="wheel" viewBox="0 0 300 300" role="img" aria-label="Rueda de tono con los colores de la paleta"></svg>
+        <p class="hint">Aros huecos: posiciones que pide la regla. Puntos: tus colores. Los grises (croma &lt; 0.03) no se evalúan por tono.</p>
+      </div>
+    </aside>
+
+    <main class="stack">
+      <div class="summary" id="summary"></div>
+      <div class="cards" id="cards"></div>
+      <div class="panel stack">
+        <div class="row" style="justify-content:space-between">
+          <label class="lbl" style="margin:0">Tokens CSS</label>
+          <button class="small" id="copyCss">Copiar</button>
+        </div>
+        <pre id="css"></pre>
+      </div>
+    </main>
+  </div>
+</div>
+<div class="toast" id="toast">Copiado</div>
+<script src="app.js"></script>
+</body>
+</html>
