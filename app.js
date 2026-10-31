@@ -131,6 +131,11 @@
     const tol = +els.tol.value; const minC = +els.wcag.value;
     els.tolVal.textContent = tol + '°';
     try { localStorage.setItem('afinador', JSON.stringify({ colors: els.colors.value, bg: els.bg.value, rule: els.rule.value, tol, wcag: minC })); } catch (e) { }
+    // Permalink: el hash siempre refleja la paleta analizada (replaceState no ensucia el historial).
+    try {
+      const share = new URLSearchParams({ c: colors.map(c => c.hex.slice(1)).join(','), bg: toHex(bgRgb).slice(1), r: els.rule.value, t: tol, w: els.wcag.value });
+      history.replaceState(null, '', colors.length ? '#' + share : location.pathname + location.search);
+    } catch (e) { }
 
     const chrom = colors.filter(c => c.C >= NEUTRAL_C);
     let rule = els.rule.value, anchor = chrom[0] ? chrom[0].h : 0, detected = false;
@@ -265,7 +270,28 @@
     }
   });
 
-  try {
+  // ---------- Permalink ----------
+  function stateFromHash() {
+    if (location.hash.length < 2) return null;
+    const p = new URLSearchParams(location.hash.slice(1));
+    const rgbs = (p.get('c') || '').split(',').map(s => parseHex(s)).filter(Boolean);
+    if (!rgbs.length) return null;
+    const rule = p.get('r');
+    return {
+      colors: rgbs.map(toHex).join('\n'),
+      bg: toHex(parseHex(p.get('bg') || '') || parseHex(DEFAULT.bg)),
+      rule: rule === 'auto' || RULES[rule] ? rule : 'auto',
+      tol: clamp(+p.get('t') || 12, 4, 30),
+      wcag: ['3', '4.5', '7'].includes(p.get('w')) ? p.get('w') : '4.5'
+    };
+  }
+  function applyState(s) { els.colors.value = s.colors; els.bg.value = s.bg; els.rule.value = s.rule; els.tol.value = s.tol; els.wcag.value = s.wcag; }
+  window.addEventListener('hashchange', () => { const s = stateFromHash(); if (s) { applyState(s); analyze(); } });
+  $('share').addEventListener('click', () => { analyze(); copy(location.href); });
+
+  const fromHash = stateFromHash();
+  if (fromHash) applyState(fromHash);
+  else try {
     const saved = JSON.parse(localStorage.getItem('afinador') || 'null');
     if (saved && saved.colors) { els.colors.value = saved.colors; els.bg.value = saved.bg || DEFAULT.bg; els.rule.value = saved.rule || 'auto'; els.tol.value = saved.tol || 12; els.wcag.value = String(saved.wcag || '4.5'); }
   } catch (e) { }
