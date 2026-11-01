@@ -245,7 +245,36 @@
     render(results, { rule, anchor, detected, targets, bad, bgRgb, minC, cMed });
   }
 
+  // ---------- Export (Figma / Tokens Studio) ----------
+  // Figma pega SVG del portapapeles conservando los id como nombres de capa:
+  // un grupo por color, un rect por paso (arena-500). Sin plugin ni API.
+  function figmaSvg(res) {
+    const S = 48, GAP = 8;
+    const w = 11 * S + 10 * GAP;
+    let y = 0; const rows = [];
+    res.forEach((r, i) => {
+      const n = tokenName(r, i);
+      rows.push(`<g id="${n}">` + r.ramp.map((s, j) =>
+        `<rect id="${n}-${s.k}" x="${j * (S + GAP)}" y="${y}" width="${S}" height="${S}" rx="6" fill="${toHex(oklchToRgb(s.c))}"/>`
+      ).join('') + '</g>');
+      y += S + GAP;
+    });
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${y - GAP}" viewBox="0 0 ${w} ${y - GAP}">${rows.join('')}</svg>`;
+  }
+  // Formato Tokens Studio: un set "global" con grupos por color y los 11 pasos.
+  function tokensJson(res) {
+    const g = {};
+    res.forEach((r, i) => {
+      const o = {};
+      r.ramp.forEach(s => { o[s.k] = { value: toHex(oklchToRgb(s.c)), type: 'color' }; });
+      g[tokenName(r, i)] = o;
+    });
+    return JSON.stringify({ global: g }, null, 2);
+  }
+
+  let lastRes = null;
   function render(res, ctx) {
+    lastRes = res;
     const fails = res.filter(r => r.fail).length;
     const warns = res.filter(r => !r.fail && r.chromaWarn).length;
     const hueDevs = res.filter(r => !r.neutral).map(r => r.dev);
@@ -315,6 +344,8 @@
   ['tol', 'ht', 'hs', 'cx'].forEach(id => $(id).addEventListener('input', analyze));
   els.colors.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') analyze(); });
   $('copyCss').addEventListener('click', () => copy(els.css.textContent));
+  $('copySvg').addEventListener('click', () => { if (lastRes && lastRes.length) copy(figmaSvg(lastRes)); });
+  $('copyJson').addEventListener('click', () => { if (lastRes && lastRes.length) copy(tokensJson(lastRes)); });
   els.cards.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.copy) copy(b.dataset.copy);
