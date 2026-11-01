@@ -104,21 +104,22 @@
   }
 
   // ---------- Corridas (tints/shades) ----------
-  // 4 tints + base + 4 shades (100–900) en OKLCH: tono constante salvo el giro
-  // voluntario hacia los extremos (el truco de Scale), luz con smoothstep y
-  // croma que se relaja hacia las puntas para no dar tints lavados ni shades sucios.
-  const L_TINT = 0.96, L_SHADE = 0.28;
+  // 5 tints + base + 5 shades (50–950, 11 pasos como las rampas de Cachito) en
+  // OKLCH: tono constante salvo el giro voluntario hacia los extremos (el truco
+  // de Scale), luz con smoothstep y croma que se relaja hacia las puntas para
+  // no dar tints lavados ni shades sucios.
+  const L_TINT = 0.985, L_SHADE = 0.22;
   function ramp(c, o) {
     const ease = t => t * t * (3 - 2 * t);
     const steps = [];
-    for (let i = 4; i >= 1; i--) {
-      const t = ease(i / 4);
-      steps.push({ k: 500 - i * 100, c: clipToGamut({ L: c.L + (L_TINT - c.L) * t, C: c.C * (1 - (1 - o.cx) * t), h: (c.h + o.ht * t + 360) % 360 }) });
+    for (let i = 5; i >= 1; i--) {
+      const t = ease(i / 5);
+      steps.push({ k: i === 5 ? 50 : 500 - i * 100, c: clipToGamut({ L: c.L + (L_TINT - c.L) * t, C: c.C * (1 - (1 - o.cx) * t), h: (c.h + o.ht * t + 360) % 360 }) });
     }
     steps.push({ k: 500, c: { L: c.L, C: c.C, h: c.h }, base: true });
-    for (let i = 1; i <= 4; i++) {
-      const t = ease(i / 4);
-      steps.push({ k: 500 + i * 100, c: clipToGamut({ L: c.L + (L_SHADE - c.L) * t, C: c.C * (1 - (1 - o.cx) * t * 0.7), h: (c.h + o.hs * t + 360) % 360 }) });
+    for (let i = 1; i <= 5; i++) {
+      const t = ease(i / 5);
+      steps.push({ k: i === 5 ? 950 : 500 + i * 100, c: clipToGamut({ L: c.L + (L_SHADE - c.L) * t, C: c.C * (1 - (1 - o.cx) * t * 0.7), h: (c.h + o.hs * t + 360) % 360 }) });
     }
     return steps;
   }
