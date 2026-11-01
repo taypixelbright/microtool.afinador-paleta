@@ -103,9 +103,29 @@
     return tryDir(dir) || tryDir(-dir);
   }
 
+  // ---------- Corridas (tints/shades) ----------
+  // 4 tints + base + 4 shades (100–900) en OKLCH: tono constante salvo el giro
+  // voluntario hacia los extremos (el truco de Scale), luz con smoothstep y
+  // croma que se relaja hacia las puntas para no dar tints lavados ni shades sucios.
+  const L_TINT = 0.96, L_SHADE = 0.28;
+  function ramp(c, o) {
+    const ease = t => t * t * (3 - 2 * t);
+    const steps = [];
+    for (let i = 4; i >= 1; i--) {
+      const t = ease(i / 4);
+      steps.push({ k: 500 - i * 100, c: clipToGamut({ L: c.L + (L_TINT - c.L) * t, C: c.C * (1 - (1 - o.cx) * t), h: (c.h + o.ht * t + 360) % 360 }) });
+    }
+    steps.push({ k: 500, c: { L: c.L, C: c.C, h: c.h }, base: true });
+    for (let i = 1; i <= 4; i++) {
+      const t = ease(i / 4);
+      steps.push({ k: 500 + i * 100, c: clipToGamut({ L: c.L + (L_SHADE - c.L) * t, C: c.C * (1 - (1 - o.cx) * t * 0.7), h: (c.h + o.hs * t + 360) % 360 }) });
+    }
+    return steps;
+  }
+
   // ---------- UI ----------
   const $ = id => document.getElementById(id);
-  const els = { colors: $('colors'), bg: $('bg'), bgSw: $('bgSw'), rule: $('rule'), tol: $('tol'), tolVal: $('tolVal'), wcag: $('wcag'), summary: $('summary'), cards: $('cards'), wheel: $('wheel'), css: $('css'), toast: $('toast') };
+  const els = { colors: $('colors'), bg: $('bg'), bgSw: $('bgSw'), rule: $('rule'), tol: $('tol'), tolVal: $('tolVal'), wcag: $('wcag'), ht: $('ht'), htVal: $('htVal'), hs: $('hs'), hsVal: $('hsVal'), cx: $('cx'), cxVal: $('cxVal'), summary: $('summary'), cards: $('cards'), wheel: $('wheel'), css: $('css'), toast: $('toast') };
   const DEFAULT = { colors: '#C9A96E arena\n#8A9A7B salvia\n#F2E8DC crema\n#3B3A36 carbón\n#2F6BB0 intruso', bg: '#F2E8DC' };
   // Nombre de token: minúsculas sin acentos, espacios a guiones. Vacío = sin nombre.
   const slug = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -149,11 +169,15 @@
     const bgRgb = parseHex(els.bg.value) || parseHex(DEFAULT.bg);
     els.bgSw.style.background = toHex(bgRgb);
     const tol = +els.tol.value; const minC = +els.wcag.value;
+    const ro = { ht: +els.ht.value, hs: +els.hs.value, cx: +els.cx.value / 100 };
     els.tolVal.textContent = tol + '°';
-    try { localStorage.setItem('afinador', JSON.stringify({ colors: els.colors.value, bg: els.bg.value, rule: els.rule.value, tol, wcag: minC })); } catch (e) { }
+    els.htVal.textContent = (ro.ht > 0 ? '+' : '') + ro.ht + '°';
+    els.hsVal.textContent = (ro.hs > 0 ? '+' : '') + ro.hs + '°';
+    els.cxVal.textContent = els.cx.value + '%';
+    try { localStorage.setItem('afinador', JSON.stringify({ colors: els.colors.value, bg: els.bg.value, rule: els.rule.value, tol, wcag: minC, ht: ro.ht, hs: ro.hs, cx: +els.cx.value })); } catch (e) { }
     // Permalink: el hash siempre refleja la paleta analizada (replaceState no ensucia el historial).
     try {
-      const share = new URLSearchParams({ c: colors.map(c => c.hex.slice(1) + (c.name ? ':' + c.name : '')).join(','), bg: toHex(bgRgb).slice(1), r: els.rule.value, t: tol, w: els.wcag.value });
+      const share = new URLSearchParams({ c: colors.map(c => c.hex.slice(1) + (c.name ? ':' + c.name : '')).join(','), bg: toHex(bgRgb).slice(1), r: els.rule.value, t: tol, w: els.wcag.value, ht: ro.ht, hs: ro.hs, cx: els.cx.value });
       history.replaceState(null, '', colors.length ? '#' + share : location.pathname + location.search);
     } catch (e) { }
 
@@ -214,7 +238,7 @@
       }
       // Marca parecidos en todas las propuestas.
       [...sugg, ...alt].forEach(s => { const tw = closest(s.c, others); s.twin = tw && tw.d < SIMILAR ? tw : null; });
-      return { ...c, neutral, nearest, dev, hueOk, chromaRatio, chromaWarn, cr, crOk, isBg, fail, sugg, alt };
+      return { ...c, neutral, nearest, dev, hueOk, chromaRatio, chromaWarn, cr, crOk, isBg, fail, sugg, alt, ramp: ramp(c, ro) };
     });
 
     render(results, { rule, anchor, detected, targets, bad, bgRgb, minC, cMed });
@@ -245,13 +269,23 @@
       };
       const sugg = (r.sugg.length ? `<div class="sugg"><h4>${r.fail ? 'Sustitutos válidos' : 'Sugerencia'}</h4><div class="opts">${r.sugg.map(opt).join('')}</div></div>` : '')
         + (r.alt.length ? `<details class="alts" ${r.fail ? 'open' : ''}><summary>Otras posiciones de la regla (${r.alt.filter(a => a.free).length} libres)</summary><div class="opts" style="margin-top:8px">${r.alt.map(opt).join('')}</div></details>` : '');
+      const n = tokenName(r, i);
+      const strip = `<div class="ramp" role="group" aria-label="Corrida de ${esc(n)}">${r.ramp.map(s => {
+        const hex = toHex(oklchToRgb(s.c));
+        return `<button class="rstep ${s.base ? 'base' : ''}" style="background:${hex}" data-copy="${hex}" title="--${esc(n)}-${s.k} · ${hex}" aria-label="Copiar ${hex} (${esc(n)}-${s.k})"></button>`;
+      }).join('')}</div>`;
       return `<article class="card ${r.fail ? 'fail' : ''}"><div class="sw" style="background:${r.hex}"></div><div class="meta">
         <div class="top">${r.name ? `<span class="name">${esc(r.name)}</span>` : ''}<span class="hex">${r.hex}</span><span class="okl">${fmtOk(r)}</span></div>
-        <div class="chips">${chips.join('')}</div>${sugg}</div></article>`;
+        <div class="chips">${chips.join('')}</div>${strip}${sugg}</div></article>`;
     }).join('');
 
     drawWheel(res, ctx.targets);
-    els.css.textContent = ':root {\n' + res.map((r, i) => `  --${tokenName(r, i)}: ${fmtOk(r)}; /* ${r.hex}${r.fail ? ' · revisar' : ''} */`).join('\n') + '\n}';
+    els.css.textContent = ':root {\n' + res.map((r, i) => {
+      const n = tokenName(r, i);
+      return [`  --${n}: ${fmtOk(r)}; /* ${r.hex}${r.fail ? ' · revisar' : ''} */`]
+        .concat(r.ramp.map(s => `  --${n}-${s.k}: ${fmtOk(s.c)}; /* ${toHex(oklchToRgb(s.c))} */`))
+        .join('\n');
+    }).join('\n\n') + '\n}';
   }
 
   function drawWheel(res, targets) {
@@ -275,9 +309,9 @@
 
   // ---------- Events ----------
   $('run').addEventListener('click', analyze);
-  $('reset').addEventListener('click', () => { els.colors.value = DEFAULT.colors; els.bg.value = DEFAULT.bg; els.rule.value = 'auto'; els.tol.value = 12; els.wcag.value = '4.5'; analyze(); });
+  $('reset').addEventListener('click', () => { els.colors.value = DEFAULT.colors; els.bg.value = DEFAULT.bg; els.rule.value = 'auto'; els.tol.value = 12; els.wcag.value = '4.5'; els.ht.value = 0; els.hs.value = 0; els.cx.value = 35; analyze(); });
   ['rule', 'wcag', 'bg'].forEach(id => $(id).addEventListener('change', analyze));
-  els.tol.addEventListener('input', analyze);
+  ['tol', 'ht', 'hs', 'cx'].forEach(id => $(id).addEventListener('input', analyze));
   els.colors.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') analyze(); });
   $('copyCss').addEventListener('click', () => copy(els.css.textContent));
   els.cards.addEventListener('click', e => {
@@ -306,10 +340,13 @@
       bg: toHex(parseHex(p.get('bg') || '') || parseHex(DEFAULT.bg)),
       rule: rule === 'auto' || RULES[rule] ? rule : 'auto',
       tol: clamp(+p.get('t') || 12, 4, 30),
-      wcag: ['3', '4.5', '7'].includes(p.get('w')) ? p.get('w') : '4.5'
+      wcag: ['3', '4.5', '7'].includes(p.get('w')) ? p.get('w') : '4.5',
+      ht: clamp(+p.get('ht') || 0, -30, 30),
+      hs: clamp(+p.get('hs') || 0, -30, 30),
+      cx: p.get('cx') === null ? 35 : clamp(+p.get('cx') || 0, 0, 100)
     };
   }
-  function applyState(s) { els.colors.value = s.colors; els.bg.value = s.bg; els.rule.value = s.rule; els.tol.value = s.tol; els.wcag.value = s.wcag; }
+  function applyState(s) { els.colors.value = s.colors; els.bg.value = s.bg; els.rule.value = s.rule; els.tol.value = s.tol; els.wcag.value = s.wcag; els.ht.value = s.ht; els.hs.value = s.hs; els.cx.value = s.cx; }
   window.addEventListener('hashchange', () => { const s = stateFromHash(); if (s) { applyState(s); analyze(); } });
   $('share').addEventListener('click', () => { analyze(); copy(location.href); });
 
@@ -317,7 +354,7 @@
   if (fromHash) applyState(fromHash);
   else try {
     const saved = JSON.parse(localStorage.getItem('afinador') || 'null');
-    if (saved && saved.colors) { els.colors.value = saved.colors; els.bg.value = saved.bg || DEFAULT.bg; els.rule.value = saved.rule || 'auto'; els.tol.value = saved.tol || 12; els.wcag.value = String(saved.wcag || '4.5'); }
+    if (saved && saved.colors) { els.colors.value = saved.colors; els.bg.value = saved.bg || DEFAULT.bg; els.rule.value = saved.rule || 'auto'; els.tol.value = saved.tol || 12; els.wcag.value = String(saved.wcag || '4.5'); els.ht.value = saved.ht || 0; els.hs.value = saved.hs || 0; els.cx.value = saved.cx == null ? 35 : saved.cx; }
   } catch (e) { }
   analyze();
 })();

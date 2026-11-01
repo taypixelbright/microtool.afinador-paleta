@@ -62,6 +62,15 @@
           <option value="7">7:1 — texto normal (AAA)</option>
         </select>
       </div>
+      <div>
+        <label class="lbl" for="ht">Corridas · giro de tono en tints <span class="tol-val" id="htVal">0°</span></label>
+        <input type="range" id="ht" min="-30" max="30" step="1" value="0">
+        <label class="lbl" for="hs" style="margin-top:10px">Giro de tono en shades <span class="tol-val" id="hsVal">0°</span></label>
+        <input type="range" id="hs" min="-30" max="30" step="1" value="0">
+        <label class="lbl" for="cx" style="margin-top:10px">Croma en los extremos <span class="tol-val" id="cxVal">35%</span></label>
+        <input type="range" id="cx" min="0" max="100" step="5" value="35">
+        <p class="hint">Cada color genera su corrida 100–900 (4 tints, base, 4 shades) con tono constante. El giro lo desvía hacia los extremos, estilo Scale; el croma dice cuánto color sobrevive en las puntas.</p>
+      </div>
       <div class="row">
         <button class="primary" id="run">Analizar</button>
         <button id="share">Compartir link</button>
