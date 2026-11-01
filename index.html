@@ -23,13 +23,13 @@
   <div class="layout">
     <aside class="panel stack">
       <div>
-        <label class="lbl" for="colors">Colores (hex, uno por línea o separados por coma)</label>
-        <textarea id="colors" spellcheck="false">#C9A96E
-#8A9A7B
-#F2E8DC
-#3B3A36
-#2F6BB0</textarea>
-        <p class="hint" style="margin-top:6px">Ejemplo precargado: cuatro tonos de una paleta cálida y un azul que no pertenece.</p>
+        <label class="lbl" for="colors">Colores (hex + nombre opcional, uno por línea)</label>
+        <textarea id="colors" spellcheck="false">#C9A96E arena
+#8A9A7B salvia
+#F2E8DC crema
+#3B3A36 carbón
+#2F6BB0 intruso</textarea>
+        <p class="hint" style="margin-top:6px">El nombre se vuelve token CSS (<code>--arena</code>); sin nombre queda <code>--color-n</code>. Ejemplo: paleta cálida y un azul que no pertenece.</p>
       </div>
       <div>
         <label class="lbl" for="bg">Fondo para contraste</label>

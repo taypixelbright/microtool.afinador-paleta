@@ -59,7 +59,8 @@
   const SIMILAR = 0.08;
   const toLab = c => { const r = c.h * Math.PI / 180; return [c.L, c.C * Math.cos(r), c.C * Math.sin(r)]; };
   const deltaE = (a, b) => { const [l1, a1, b1] = toLab(a), [l2, a2, b2] = toLab(b); return Math.hypot(l1 - l2, a1 - a2, b1 - b2); };
-  const closest = (c, list) => list.reduce((best, o) => { const d = deltaE(c, o); return !best || d < best.d ? { hex: o.hex, d } : best; }, null);
+  const closest = (c, list) => list.reduce((best, o) => { const d = deltaE(c, o); return !best || d < best.d ? { hex: o.hex, name: o.name, d } : best; }, null);
+  const label = o => o.name || o.hex;
 
   // ---------- Rules ----------
   const RULES = {
@@ -105,7 +106,10 @@
   // ---------- UI ----------
   const $ = id => document.getElementById(id);
   const els = { colors: $('colors'), bg: $('bg'), bgSw: $('bgSw'), rule: $('rule'), tol: $('tol'), tolVal: $('tolVal'), wcag: $('wcag'), summary: $('summary'), cards: $('cards'), wheel: $('wheel'), css: $('css'), toast: $('toast') };
-  const DEFAULT = { colors: '#C9A96E\n#8A9A7B\n#F2E8DC\n#3B3A36\n#2F6BB0', bg: '#F2E8DC' };
+  const DEFAULT = { colors: '#C9A96E arena\n#8A9A7B salvia\n#F2E8DC crema\n#3B3A36 carbón\n#2F6BB0 intruso', bg: '#F2E8DC' };
+  // Nombre de token: minúsculas sin acentos, espacios a guiones. Vacío = sin nombre.
+  const slug = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  const tokenName = (r, i) => r.name || 'color-' + (i + 1);
   const esc = s => s.replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
 
   function toast(msg) { els.toast.textContent = msg; els.toast.classList.add('show'); setTimeout(() => els.toast.classList.remove('show'), 1400); }
@@ -118,9 +122,25 @@
   }
 
   function readPalette() {
-    const parts = els.colors.value.split(/[\n,;\s]+/).map(s => s.trim()).filter(Boolean);
-    const out = []; const bad = [];
-    parts.forEach(p => { const rgb = parseHex(p); if (rgb) out.push({ src: p, hex: toHex(rgb), rgb, ...rgbToOklch(rgb) }); else bad.push(p); });
+    // Cada entrada (línea, coma o punto y coma) es un hex con nombre opcional: "#C9A96E arena".
+    // Varios hex seguidos en una entrada siguen valiendo; el texto se pega al hex anterior.
+    const out = []; const bad = []; const seen = {};
+    const push = (c, words) => {
+      if (!c) return;
+      let name = slug(words.join(' '));
+      if (name) { seen[name] = (seen[name] || 0) + 1; if (seen[name] > 1) name += '-' + seen[name]; }
+      out.push({ ...c, name });
+    };
+    els.colors.value.split(/[\n,;]+/).forEach(entry => {
+      let cur = null, words = [];
+      entry.split(/\s+/).filter(Boolean).forEach(tok => {
+        const rgb = parseHex(tok);
+        if (rgb) { push(cur, words); cur = { src: tok, hex: toHex(rgb), rgb, ...rgbToOklch(rgb) }; words = []; }
+        else if (cur) words.push(tok);
+        else bad.push(tok);
+      });
+      push(cur, words);
+    });
     return { out, bad };
   }
 
@@ -133,7 +153,7 @@
     try { localStorage.setItem('afinador', JSON.stringify({ colors: els.colors.value, bg: els.bg.value, rule: els.rule.value, tol, wcag: minC })); } catch (e) { }
     // Permalink: el hash siempre refleja la paleta analizada (replaceState no ensucia el historial).
     try {
-      const share = new URLSearchParams({ c: colors.map(c => c.hex.slice(1)).join(','), bg: toHex(bgRgb).slice(1), r: els.rule.value, t: tol, w: els.wcag.value });
+      const share = new URLSearchParams({ c: colors.map(c => c.hex.slice(1) + (c.name ? ':' + c.name : '')).join(','), bg: toHex(bgRgb).slice(1), r: els.rule.value, t: tol, w: els.wcag.value });
       history.replaceState(null, '', colors.length ? '#' + share : location.pathname + location.search);
     } catch (e) { }
 
@@ -179,7 +199,7 @@
         if (twin && twin.d < SIMILAR) {
           const dir = c.L >= 0.5 ? -1 : 1;
           const s4 = clipToGamut({ L: clamp(c.L + dir * 0.18, 0.08, 0.96), C: c.C, h });
-          sugg.push({ t: 'Mismo tono, otra luz', why: `El tono corregido se parece a ${twin.hex}; esta versión se separa en luminosidad.`, c: s4 });
+          sugg.push({ t: 'Mismo tono, otra luz', why: `El tono corregido se parece a ${label(twin)}; esta versión se separa en luminosidad.`, c: s4 });
         }
       } else if (chromaWarn && cMed) {
         sugg.push({ t: 'Croma de la paleta', why: `Hoy pesa ${chromaRatio.toFixed(1)}× la mediana; esto lo iguala.`, c: clipToGamut({ L: c.L, C: cMed, h: c.h }) });
@@ -188,7 +208,7 @@
       if (!neutral && targets.length > 1) {
         targets.filter(t => t !== nearest).forEach(t => {
           const occ = others.filter(o => o.C >= NEUTRAL_C && angDist(o.h, t) <= tol);
-          alt.push({ t: `Posición ${t.toFixed(0)}°`, free: !occ.length, why: occ.length ? `Ocupado por ${occ.map(o => o.hex).join(', ')}` : 'Hueco libre en la regla', c: clipToGamut({ L: c.L, C: c.C, h: t }) });
+          alt.push({ t: `Posición ${t.toFixed(0)}°`, free: !occ.length, why: occ.length ? `Ocupado por ${occ.map(label).join(', ')}` : 'Hueco libre en la regla', c: clipToGamut({ L: c.L, C: c.C, h: t }) });
         });
         alt.sort((a, b) => (b.free - a.free));
       }
@@ -219,19 +239,19 @@
       chips.push(r.isBg ? `<span class="chip neutral">Es el fondo</span>` : `<span class="chip ${r.crOk ? 'ok' : 'bad'}">Contraste ${r.cr.toFixed(2)}:1 ${r.crOk ? '✓' : '✗'}</span>`);
       const opt = s => {
         const hex = toHex(oklchToRgb(s.c));
-        const twin = s.twin ? `<span class="chip warn" style="margin-top:4px">Se parece a ${s.twin.hex}</span>` : (s.free === true ? `<span class="chip ok" style="margin-top:4px">Libre</span>` : '');
+        const twin = s.twin ? `<span class="chip warn" style="margin-top:4px">Se parece a ${esc(label(s.twin))}</span>` : (s.free === true ? `<span class="chip ok" style="margin-top:4px">Libre</span>` : '');
         return `<div class="opt ${s.twin ? 'twin' : ''}"><div class="sw" style="background:${hex}"></div><div style="min-width:0"><div class="t">${esc(s.t)}</div><div class="hex">${hex}</div><div class="why">${esc(s.why)}</div>${twin}
           <div class="acts"><button class="small" data-apply="${i}" data-hex="${hex}">Aplicar</button><button class="small" data-copy="${hex}">Copiar</button></div></div></div>`;
       };
       const sugg = (r.sugg.length ? `<div class="sugg"><h4>${r.fail ? 'Sustitutos válidos' : 'Sugerencia'}</h4><div class="opts">${r.sugg.map(opt).join('')}</div></div>` : '')
         + (r.alt.length ? `<details class="alts" ${r.fail ? 'open' : ''}><summary>Otras posiciones de la regla (${r.alt.filter(a => a.free).length} libres)</summary><div class="opts" style="margin-top:8px">${r.alt.map(opt).join('')}</div></details>` : '');
       return `<article class="card ${r.fail ? 'fail' : ''}"><div class="sw" style="background:${r.hex}"></div><div class="meta">
-        <div class="top"><span class="hex">${r.hex}</span><span class="okl">${fmtOk(r)}</span></div>
+        <div class="top">${r.name ? `<span class="name">${esc(r.name)}</span>` : ''}<span class="hex">${r.hex}</span><span class="okl">${fmtOk(r)}</span></div>
         <div class="chips">${chips.join('')}</div>${sugg}</div></article>`;
     }).join('');
 
     drawWheel(res, ctx.targets);
-    els.css.textContent = ':root {\n' + res.map((r, i) => `  --color-${i + 1}: ${fmtOk(r)}; /* ${r.hex}${r.fail ? ' · revisar' : ''} */`).join('\n') + '\n}';
+    els.css.textContent = ':root {\n' + res.map((r, i) => `  --${tokenName(r, i)}: ${fmtOk(r)}; /* ${r.hex}${r.fail ? ' · revisar' : ''} */`).join('\n') + '\n}';
   }
 
   function drawWheel(res, targets) {
@@ -248,7 +268,7 @@
       const [x, y] = pt(r.h, rad);
       if (r.neutral) return;
       if (!r.hueOk) { const [tx, ty] = pt(r.nearest, R); s += `<line class="link" x1="${x}" y1="${y}" x2="${tx}" y2="${ty}"/>`; }
-      s += `<circle class="dot ${r.hueOk ? '' : 'bad'}" cx="${x}" cy="${y}" r="8" fill="${r.hex}"><title>${r.hex} · ${r.h.toFixed(0)}°</title></circle>`;
+      s += `<circle class="dot ${r.hueOk ? '' : 'bad'}" cx="${x}" cy="${y}" r="8" fill="${r.hex}"><title>${r.name ? esc(r.name) + ' · ' : ''}${r.hex} · ${r.h.toFixed(0)}°</title></circle>`;
     });
     els.wheel.innerHTML = s;
   }
@@ -265,7 +285,7 @@
     if (b.dataset.copy) copy(b.dataset.copy);
     if (b.dataset.apply !== undefined) {
       const idx = +b.dataset.apply; const { out } = readPalette();
-      const lines = out.map(c => c.hex); lines[idx] = b.dataset.hex;
+      const lines = out.map((c, i) => (i === idx ? b.dataset.hex : c.hex) + (c.name ? ' ' + c.name : ''));
       els.colors.value = lines.join('\n'); analyze(); toast('Aplicado ' + b.dataset.hex);
     }
   });
@@ -274,11 +294,15 @@
   function stateFromHash() {
     if (location.hash.length < 2) return null;
     const p = new URLSearchParams(location.hash.slice(1));
-    const rgbs = (p.get('c') || '').split(',').map(s => parseHex(s)).filter(Boolean);
-    if (!rgbs.length) return null;
+    const lines = (p.get('c') || '').split(',').map(s => {
+      const [hx, ...n] = s.split(':');
+      const rgb = parseHex(hx); const name = slug(n.join(' '));
+      return rgb && toHex(rgb) + (name ? ' ' + name : '');
+    }).filter(Boolean);
+    if (!lines.length) return null;
     const rule = p.get('r');
     return {
-      colors: rgbs.map(toHex).join('\n'),
+      colors: lines.join('\n'),
       bg: toHex(parseHex(p.get('bg') || '') || parseHex(DEFAULT.bg)),
       rule: rule === 'auto' || RULES[rule] ? rule : 'auto',
       tol: clamp(+p.get('t') || 12, 4, 30),

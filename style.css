@@ -100,6 +100,7 @@ img { max-width: 100%; }
   .card .meta { display: grid; gap: 8px; min-width: 0; }
   .card .top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
   .hex { font-family: var(--mono); font-weight: 500; font-size: 14px; }
+  .card .name { font-weight: 800; font-size: 15px; letter-spacing: -0.01em; }
   .okl { font-family: var(--mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chip { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; font-variant-numeric: tabular-nums; }
