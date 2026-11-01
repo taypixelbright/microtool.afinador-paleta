@@ -60,6 +60,7 @@
   const toLab = c => { const r = c.h * Math.PI / 180; return [c.L, c.C * Math.cos(r), c.C * Math.sin(r)]; };
   const deltaE = (a, b) => { const [l1, a1, b1] = toLab(a), [l2, a2, b2] = toLab(b); return Math.hypot(l1 - l2, a1 - a2, b1 - b2); };
   const closest = (c, list) => list.reduce((best, o) => { const d = deltaE(c, o); return !best || d < best.d ? { hex: o.hex, name: o.name, d } : best; }, null);
+  const mixHex = (a, b, t) => { const A = rgbToOklab(a), B = rgbToOklab(b); return toHex(oklabToRgbLin(A.map((v, i) => v + (B[i] - v) * t)).map(toSrgb)); };
   const label = o => o.name || o.hex;
 
   // ---------- Rules ----------
@@ -175,13 +176,15 @@
     els.htVal.textContent = (ro.ht > 0 ? '+' : '') + ro.ht + '°';
     els.hsVal.textContent = (ro.hs > 0 ? '+' : '') + ro.hs + '°';
     els.cxVal.textContent = els.cx.value + '%';
-    try { localStorage.setItem('afinador', JSON.stringify({ colors: els.colors.value, bg: els.bg.value, rule: els.rule.value, tol, wcag: minC, ht: ro.ht, hs: ro.hs, cx: +els.cx.value })); } catch (e) { }
+    try { localStorage.setItem('afinador', JSON.stringify({ colors: els.colors.value, bg: els.bg.value, rule: els.rule.value, tol, wcag: minC, ht: ro.ht, hs: ro.hs, cx: +els.cx.value, sel: selected })); } catch (e) { }
     // Permalink: el hash siempre refleja la paleta analizada (replaceState no ensucia el historial).
     try {
       const share = new URLSearchParams({ c: colors.map(c => c.hex.slice(1) + (c.name ? ':' + c.name : '')).join(','), bg: toHex(bgRgb).slice(1), r: els.rule.value, t: tol, w: els.wcag.value, ht: ro.ht, hs: ro.hs, cx: els.cx.value });
+      if (selected) share.set('sel', selected.slice(1));
       history.replaceState(null, '', colors.length ? '#' + share : location.pathname + location.search);
     } catch (e) { }
 
+    if (selected && !colors.some(c => c.hex === selected)) selected = null;
     const chrom = colors.filter(c => c.C >= NEUTRAL_C);
     let rule = els.rule.value, anchor = chrom[0] ? chrom[0].h : 0, detected = false;
     if (rule === 'auto') {
@@ -243,6 +246,7 @@
     });
 
     render(results, { rule, anchor, detected, targets, bad, bgRgb, minC, cMed });
+    applyTheme(bgRgb);
   }
 
   // ---------- Export (Figma / Tokens Studio) ----------
@@ -273,6 +277,28 @@
   }
 
   let lastRes = null;
+  let selected = null; // hex del color "probado" en la página
+  // El fondo elegido pinta la página de verdad (también los paneles: nada de
+  // blanco encima), y el tema claro/oscuro se decide por su luminosidad. Con un
+  // color seleccionado, TODO el texto se vuelve de ese color —ese es el preview
+  // de contraste—, el secundario como versión atenuada hacia el fondo, y los
+  // acentos (botones, sliders, focus) lo acompañan.
+  function applyTheme(bgRgb) {
+    const root = document.documentElement;
+    const bgHex = toHex(bgRgb);
+    root.style.setProperty('--bg', bgHex);
+    root.style.setProperty('--panel', bgHex);
+    root.dataset.theme = rgbToOklch(bgRgb).L < 0.5 ? 'dark' : 'light';
+    if (selected) {
+      const rgb = parseHex(selected);
+      root.style.setProperty('--fg', selected);
+      root.style.setProperty('--muted', mixHex(rgb, bgRgb, 0.35));
+      root.style.setProperty('--accent', selected);
+      root.style.setProperty('--accent-ink', contrast(rgb, [1, 1, 1]) >= contrast(rgb, [0, 0, 0]) ? '#FFFFFF' : '#000000');
+    } else {
+      ['--fg', '--muted', '--accent', '--accent-ink'].forEach(p => root.style.removeProperty(p));
+    }
+  }
   function render(res, ctx) {
     lastRes = res;
     const fails = res.filter(r => r.fail).length;
@@ -304,7 +330,7 @@
         const hex = toHex(oklchToRgb(s.c));
         return `<button class="rstep ${s.base ? 'base' : ''}" style="background:${hex}" data-copy="${hex}" title="--${esc(n)}-${s.k} · ${hex}" aria-label="Copiar ${hex} (${esc(n)}-${s.k})"></button>`;
       }).join('')}</div>`;
-      return `<article class="card ${r.fail ? 'fail' : ''}"><div class="sw" style="background:${r.hex}"></div><div class="meta">
+      return `<article class="card ${r.fail ? 'fail' : ''}"><div class="sw selectable${selected === r.hex ? ' selected' : ''}" style="background:${r.hex}" data-sel="${r.hex}" role="button" tabindex="0" aria-pressed="${selected === r.hex}" title="${selected === r.hex ? 'Dejar de probarlo' : 'Probar este color en la página'}"></div><div class="meta">
         <div class="top">${r.name ? `<span class="name">${esc(r.name)}</span>` : ''}<span class="hex">${r.hex}</span><span class="okl">${fmtOk(r)}</span></div>
         <div class="chips">${chips.join('')}</div>${strip}${sugg}</div></article>`;
     }).join('');
@@ -346,7 +372,10 @@
   $('copyCss').addEventListener('click', () => copy(els.css.textContent));
   $('copySvg').addEventListener('click', () => { if (lastRes && lastRes.length) copy(figmaSvg(lastRes)); });
   $('copyJson').addEventListener('click', () => { if (lastRes && lastRes.length) copy(tokensJson(lastRes)); });
+  const toggleSel = hex => { selected = selected === hex ? null : hex; analyze(); };
   els.cards.addEventListener('click', e => {
+    const sw = e.target.closest('[data-sel]');
+    if (sw) { toggleSel(sw.dataset.sel); return; }
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.copy) copy(b.dataset.copy);
     if (b.dataset.apply !== undefined) {
@@ -375,18 +404,24 @@
       wcag: ['3', '4.5', '7'].includes(p.get('w')) ? p.get('w') : '4.5',
       ht: clamp(+p.get('ht') || 0, -30, 30),
       hs: clamp(+p.get('hs') || 0, -30, 30),
-      cx: p.get('cx') === null ? 35 : clamp(+p.get('cx') || 0, 0, 100)
+      cx: p.get('cx') === null ? 35 : clamp(+p.get('cx') || 0, 0, 100),
+      sel: parseHex(p.get('sel') || '') ? toHex(parseHex(p.get('sel'))) : null
     };
   }
-  function applyState(s) { els.colors.value = s.colors; els.bg.value = s.bg; els.rule.value = s.rule; els.tol.value = s.tol; els.wcag.value = s.wcag; els.ht.value = s.ht; els.hs.value = s.hs; els.cx.value = s.cx; }
+  function applyState(s) { els.colors.value = s.colors; els.bg.value = s.bg; els.rule.value = s.rule; els.tol.value = s.tol; els.wcag.value = s.wcag; els.ht.value = s.ht; els.hs.value = s.hs; els.cx.value = s.cx; selected = s.sel || null; }
   window.addEventListener('hashchange', () => { const s = stateFromHash(); if (s) { applyState(s); analyze(); } });
   $('share').addEventListener('click', () => { analyze(); copy(location.href); });
+
+  els.cards.addEventListener('keydown', e => {
+    const sw = e.target.closest('[data-sel]');
+    if (sw && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleSel(sw.dataset.sel); }
+  });
 
   const fromHash = stateFromHash();
   if (fromHash) applyState(fromHash);
   else try {
     const saved = JSON.parse(localStorage.getItem('afinador') || 'null');
-    if (saved && saved.colors) { els.colors.value = saved.colors; els.bg.value = saved.bg || DEFAULT.bg; els.rule.value = saved.rule || 'auto'; els.tol.value = saved.tol || 12; els.wcag.value = String(saved.wcag || '4.5'); els.ht.value = saved.ht || 0; els.hs.value = saved.hs || 0; els.cx.value = saved.cx == null ? 35 : saved.cx; }
+    if (saved && saved.colors) { els.colors.value = saved.colors; els.bg.value = saved.bg || DEFAULT.bg; els.rule.value = saved.rule || 'auto'; els.tol.value = saved.tol || 12; els.wcag.value = String(saved.wcag || '4.5'); els.ht.value = saved.ht || 0; els.hs.value = saved.hs || 0; els.cx.value = saved.cx == null ? 35 : saved.cx; selected = saved.sel || null; }
   } catch (e) { }
   analyze();
 })();

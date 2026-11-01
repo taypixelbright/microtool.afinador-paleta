@@ -97,6 +97,10 @@ img { max-width: 100%; }
   .card { display: grid; grid-template-columns: 72px 1fr; gap: 14px; border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: var(--panel); min-width: 0; }
   .card.fail { border-color: var(--bad); }
   .card .sw { height: 72px; border-radius: 10px; border: 1px solid var(--line); }
+  .card .sw.selectable { cursor: pointer; }
+  .card .sw.selected { outline: 3px solid var(--accent); outline-offset: 2px; }
+  body { transition: background-color .25s; }
+  @media (prefers-reduced-motion: reduce) { body { transition: none; } }
   .card .meta { display: grid; gap: 8px; min-width: 0; }
   .card .top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
   .hex { font-family: var(--mono); font-weight: 500; font-size: 14px; }

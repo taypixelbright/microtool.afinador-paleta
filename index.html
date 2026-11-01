@@ -37,6 +37,7 @@
           <div class="swatch-in" id="bgSw"></div>
           <input class="grow" type="text" id="bg" value="#F2E8DC" spellcheck="false">
         </div>
+        <p class="hint" style="margin-top:6px">El color sobre el que se mide cada contraste: usa el fondo real de tu página o sección. También pinta esta página de ese color; con clic en el swatch grande de una tarjeta, todos los textos se vuelven de ese color y ves el contraste real.</p>
       </div>
       <div>
         <label class="lbl" for="rule">Regla armónica</label>
@@ -49,10 +50,12 @@
           <option value="tri">Triádica (120°)</option>
           <option value="tetra">Tetrádica (90°)</option>
         </select>
+        <p class="hint" style="margin-top:6px">El patrón de ángulos que deben guardar los tonos entre sí. En automático se prueba cada regla con cada color como ancla y gana la que mejor explica tu paleta.</p>
       </div>
       <div>
         <label class="lbl" for="tol">Tolerancia de tono <span class="tol-val" id="tolVal">12°</span></label>
         <input type="range" id="tol" min="4" max="30" step="1" value="12">
+        <p class="hint" style="margin-top:6px">Cuántos grados puede desviarse un color de su posición en la regla antes de marcarse como falla.</p>
       </div>
       <div>
         <label class="lbl" for="wcag">Contraste mínimo</label>
@@ -61,15 +64,22 @@
           <option value="4.5" selected>4.5:1 — texto normal (AA)</option>
           <option value="7">7:1 — texto normal (AAA)</option>
         </select>
+        <p class="hint" style="margin-top:6px">Umbral WCAG 2.1 contra el fondo. 3:1 basta para texto grande e iconos; 4.5:1 para texto de lectura; 7:1 es el nivel AAA.</p>
       </div>
       <div>
-        <label class="lbl" for="ht">Corridas · giro de tono en tints <span class="tol-val" id="htVal">0°</span></label>
+        <label class="lbl" for="ht">Giro de tono en tints <span class="tol-val" id="htVal">0°</span></label>
         <input type="range" id="ht" min="-30" max="30" step="1" value="0">
-        <label class="lbl" for="hs" style="margin-top:10px">Giro de tono en shades <span class="tol-val" id="hsVal">0°</span></label>
+        <p class="hint" style="margin-top:6px">Desvía el tono conforme la corrida aclara (50–950, estilo Scale): + gira hacia un lado de la rueda, − hacia el otro. Un giro suave hacia amarillo da tints más cálidos; 0° = tono constante.</p>
+      </div>
+      <div>
+        <label class="lbl" for="hs">Giro de tono en shades <span class="tol-val" id="hsVal">0°</span></label>
         <input type="range" id="hs" min="-30" max="30" step="1" value="0">
-        <label class="lbl" for="cx" style="margin-top:10px">Croma en los extremos <span class="tol-val" id="cxVal">35%</span></label>
+        <p class="hint" style="margin-top:6px">Lo mismo pero hacia el extremo oscuro. El clásico: un giro hacia azul da shades profundos en vez de cafés apagados.</p>
+      </div>
+      <div>
+        <label class="lbl" for="cx">Croma en los extremos <span class="tol-val" id="cxVal">35%</span></label>
         <input type="range" id="cx" min="0" max="100" step="5" value="35">
-        <p class="hint">Cada color genera su corrida 50–950 (5 tints, base, 5 shades) con tono constante. El giro lo desvía hacia los extremos, estilo Scale; el croma dice cuánto color sobrevive en las puntas.</p>
+        <p class="hint" style="margin-top:6px">Cuánto color conserva la corrida en el 50 y el 950: bajo = puntas casi neutras, 100% = mantienen el croma del base (puede recortarse al gamut).</p>
       </div>
       <div class="row">
         <button class="primary" id="run">Analizar</button>
@@ -78,9 +88,17 @@
       </div>
       <p class="hint">Compartir copia un link con la paleta y los ajustes; quien lo abra ve el mismo análisis.</p>
       <div>
+        <label class="lbl">Exportar corridas</label>
+        <div class="row">
+          <button class="small" id="copySvg">Copiar SVG para Figma</button>
+          <button class="small" id="copyJson">Copiar Tokens JSON</button>
+        </div>
+        <p class="hint" style="margin-top:6px">El SVG se pega directo en Figma (⌘V) como swatches con capas nombradas (<code>arena-500</code>). El JSON es formato Tokens Studio: impórtalo como set y conviértelo en variables.</p>
+      </div>
+      <div>
         <label class="lbl">Rueda de tono (radio = croma)</label>
         <svg class="wheel" id="wheel" viewBox="0 0 300 300" role="img" aria-label="Rueda de tono con los colores de la paleta"></svg>
-        <p class="hint">Aros huecos: posiciones que pide la regla. Puntos: tus colores. Los grises (croma &lt; 0.03) no se evalúan por tono.</p>
+        <p class="hint">El mapa de la armonía: cada punto es un color (ángulo = tono, distancia al centro = croma) y los aros huecos son las posiciones que pide la regla. Una línea punteada une al que falla con su posición. Los grises (croma &lt; 0.03) no se evalúan por tono.</p>
       </div>
     </aside>
 
@@ -93,16 +111,6 @@
           <button class="small" id="copyCss">Copiar</button>
         </div>
         <pre id="css"></pre>
-      </div>
-      <div class="panel stack">
-        <div class="row" style="justify-content:space-between">
-          <label class="lbl" style="margin:0">Exportar corridas</label>
-          <div class="row">
-            <button class="small" id="copySvg">Copiar SVG para Figma</button>
-            <button class="small" id="copyJson">Copiar Tokens JSON</button>
-          </div>
-        </div>
-        <p class="hint">El SVG se pega directo en Figma (⌘V) como swatches con capas nombradas (<code>arena-500</code>). El JSON es formato Tokens Studio: impórtalo como set y conviértelo en variables.</p>
       </div>
     </main>
   </div>
