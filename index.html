@@ -29,7 +29,7 @@
 #F2E8DC crema
 #3B3A36 carbón
 #2F6BB0 intruso</textarea>
-        <p class="hint" style="margin-top:6px">Un <code>*</code> al final fija ese color como ancla: define la regla y los demás se acomodan a él. El nombre se vuelve token CSS (<code>--arena</code>); sin nombre queda <code>--color-n</code>. Ejemplo: paleta cálida y un azul que no pertenece.</p>
+        <p class="hint" style="margin-top:6px">Sufijos: <code>*</code> fija ese color como ancla: define la regla y los demás se acomodan a él; <code>@</code> lo declara superficie (fondo sobre el que se miden los demás). El nombre se vuelve token CSS (<code>--arena</code>); sin nombre queda <code>--color-n</code>. Ejemplo: paleta cálida y un azul que no pertenece.</p>
       </div>
       <div>
         <label class="lbl" for="bg">Fondo para contraste</label>
@@ -37,7 +37,7 @@
           <div class="swatch-in" id="bgSw"></div>
           <input class="grow" type="text" id="bg" value="#F2E8DC" spellcheck="false">
         </div>
-        <p class="hint" style="margin-top:6px">El color sobre el que se mide cada contraste: usa el fondo real de tu página o sección. También pinta esta página de ese color; con clic en el swatch grande de una tarjeta, todos los textos se vuelven de ese color y ves el contraste real.</p>
+        <p class="hint" style="margin-top:6px">Si marcas colores con <code>@</code> (light, dark…), son tus superficies: cada color pasa si contrasta sobre al menos una y ves sobre cuál. Sin superficies marcadas, este campo es el único fondo. También pinta esta página de ese color; con clic en el swatch grande de una tarjeta, todos los textos se vuelven de ese color y ves el contraste real.</p>
       </div>
       <div>
         <label class="lbl" for="rule">Regla armónica</label>

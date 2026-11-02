@@ -152,7 +152,7 @@
     });
   }
 
-  const lineOf = c => c.hex + (c.name ? ' ' + c.name : '') + (c.pin ? ' *' : '');
+  const lineOf = c => c.hex + (c.name ? ' ' + c.name : '') + (c.pin ? ' *' : '') + (c.surf ? ' @' : '');
   function readPalette() {
     // Cada entrada (línea, coma o punto y coma) es un hex con nombre opcional: "#C9A96E arena".
     // Varios hex seguidos en una entrada siguen valiendo; el texto se pega al hex anterior.
@@ -167,8 +167,9 @@
       let cur = null, words = [];
       entry.split(/\s+/).filter(Boolean).forEach(tok => {
         const rgb = parseHex(tok);
-        if (rgb) { push(cur, words); cur = { src: tok, hex: toHex(rgb), rgb, ...rgbToOklch(rgb), pin: false }; words = []; }
+        if (rgb) { push(cur, words); cur = { src: tok, hex: toHex(rgb), rgb, ...rgbToOklch(rgb), pin: false, surf: false }; words = []; }
         else if (cur && tok === '*') cur.pin = true;
+        else if (cur && tok === '@') cur.surf = true;
         else if (cur) words.push(tok);
         else bad.push(tok);
       });
@@ -190,12 +191,17 @@
     try { localStorage.setItem('afinador', JSON.stringify({ colors: els.colors.value, bg: els.bg.value, rule: els.rule.value, tol, wcag: minC, ht: ro.ht, hs: ro.hs, cx: +els.cx.value, sel: selected })); } catch (e) { }
     // Permalink: el hash siempre refleja la paleta analizada (replaceState no ensucia el historial).
     try {
-      const share = new URLSearchParams({ c: colors.map(c => c.hex.slice(1) + (c.name ? ':' + c.name : '') + (c.pin ? '*' : '')).join(','), bg: toHex(bgRgb).slice(1), r: els.rule.value, t: tol, w: els.wcag.value, ht: ro.ht, hs: ro.hs, cx: els.cx.value });
+      const share = new URLSearchParams({ c: colors.map(c => c.hex.slice(1) + (c.name ? ':' + c.name : '') + (c.pin ? '*' : '') + (c.surf ? '@' : '')).join(','), bg: toHex(bgRgb).slice(1), r: els.rule.value, t: tol, w: els.wcag.value, ht: ro.ht, hs: ro.hs, cx: els.cx.value });
       if (selected) share.set('sel', selected.slice(1));
       history.replaceState(null, '', colors.length ? '#' + share : location.pathname + location.search);
     } catch (e) { }
 
     if (selected && !colors.some(c => c.hex === selected)) selected = null;
+    // Superficies: colores marcados con "@" (light, dark…). Cada color pasa
+    // contraste si lo cumple sobre AL MENOS una superficie; se reporta sobre
+    // cuál. Sin superficies declaradas, el campo "Fondo" es la única.
+    const declared = colors.filter(c => c.surf);
+    const surfaces = declared.length ? declared : [{ hex: toHex(bgRgb), rgb: bgRgb, name: '', fallback: true }];
     const chrom = colors.filter(c => c.C >= NEUTRAL_C);
     // Ancla: el color fijado con "*" manda. Define el tono 0° de la regla y
     // nunca recibe propuestas de tono; los demás se acomodan respecto a él.
@@ -236,9 +242,12 @@
       const chromaRatio = neutral || !cMed ? 1 : c.C / cMed;
       const accent = accents.has(c.hex);
       const chromaWarn = !neutral && !accent && (chromaRatio > ACCENT_RATIO || chromaRatio < 0.45);
-      const cr = contrast(c.rgb, bgRgb);
-      const crOk = cr >= minC;
-      const isBg = c.hex === toHex(bgRgb);
+      const onSurf = surfaces.filter(sf => sf.hex !== c.hex).map(sf => { const v = contrast(c.rgb, sf.rgb); return { sf, cr: v, ok: v >= minC }; }).sort((a, b) => b.cr - a.cr);
+      const best = onSurf[0] || null;
+      const cr = best ? best.cr : Infinity;
+      const crOk = !best || best.ok;
+      const isBg = !!c.surf || (surfaces.length === 1 && c.hex === surfaces[0].hex);
+      const surfRgb = best ? best.sf.rgb : bgRgb;
       const fail = !hueOk || (!crOk && !isBg);
       const others = colors.filter(o => o !== c);
       const sugg = []; const alt = [];
@@ -246,10 +255,10 @@
         const h = hueOk ? c.h : nearest;
         const s1 = clipToGamut({ L: c.L, C: c.C, h });
         if (!hueOk) sugg.push({ t: 'Tono corregido', why: `Gira ${dev.toFixed(0)}° hasta ${nearest.toFixed(0)}°; conserva luz y croma.`, c: s1 });
-        const s2 = fixContrast(s1, bgRgb, minC);
+        const s2 = fixContrast(s1, surfRgb, minC);
         if (s2 && (!crOk || !hueOk)) {
-          const r2 = contrast(oklchToRgb(s2), bgRgb);
-          sugg.push({ t: 'Tono + contraste', why: `Ajusta la luz hasta ${r2.toFixed(2)}:1 sobre el fondo.`, c: s2 });
+          const r2 = contrast(oklchToRgb(s2), surfRgb);
+          sugg.push({ t: 'Tono + contraste', why: `Ajusta la luz hasta ${r2.toFixed(2)}:1 sobre ${best && best.sf.name ? best.sf.name : 'el fondo'}.`, c: s2 });
         }
         if (!hueOk && cMed) sugg.push({ t: 'Croma de la paleta', why: `Lleva el croma a la mediana (${cMed.toFixed(3)}) para que pese igual que el resto.`, c: clipToGamut({ L: c.L, C: cMed, h }) });
         // Si el sustituto cercano se confunde con otro color, ofrece una versión separada en luz.
@@ -277,10 +286,10 @@
       }
       // Marca parecidos en todas las propuestas.
       [...sugg, ...alt].forEach(s => { const tw = closest(s.c, others); s.twin = tw && tw.d < SIMILAR ? tw : null; });
-      return { ...c, neutral, nearest, dev, hueOk, chromaRatio, chromaWarn, accent, pinned: !!c.pin, cr, crOk, isBg, fail, sugg, alt, ramp: ramp(c, ro) };
+      return { ...c, neutral, nearest, dev, hueOk, chromaRatio, chromaWarn, accent, pinned: !!c.pin, surface: !!c.surf, onSurf, cr, crOk, isBg, fail, sugg, alt, ramp: ramp(c, ro) };
     });
 
-    render(results, { rule, anchor, detected, targets, bad, bgRgb, minC, cMed, pinned });
+    render(results, { rule, anchor, detected, targets, bad, bgRgb, minC, cMed, pinned, surfaces: declared });
     applyTheme(bgRgb);
   }
 
@@ -344,7 +353,7 @@
       <div class="stat"><span class="k">Regla</span><span class="v">${esc(RULES[ctx.rule].name)}</span><span class="s">${ctx.detected ? 'detectada' : 'fijada'} · ancla ${ctx.pinned ? label(ctx.pinned) + ' ★' : ctx.anchor.toFixed(0) + '°'}</span></div>
       <div class="stat"><span class="k">Veredicto</span><span class="v" style="color:${fails ? 'var(--bad)' : 'var(--ok)'}">${fails ? fails + (fails === 1 ? ' falla' : ' fallan') : 'Todo cuadra'}</span><span class="s">${warns ? warns + ' con aviso de croma' : res.length + ' colores evaluados'}</span></div>
       <div class="stat"><span class="k">Desvío medio</span><span class="v">${avgDev.toFixed(1)}°</span><span class="s">tolerancia ${els.tol.value}°</span></div>
-      <div class="stat"><span class="k">Fondo</span><span class="v hex">${toHex(ctx.bgRgb)}</span><span class="s">mínimo ${ctx.minC}:1${ctx.bad.length ? ' · ignorado: ' + esc(ctx.bad.join(', ')) : ''}</span></div>`;
+      <div class="stat"><span class="k">${ctx.surfaces.length ? 'Superficies' : 'Fondo'}</span><span class="v ${ctx.surfaces.length ? '' : 'hex'}">${ctx.surfaces.length ? ctx.surfaces.map(label).map(esc).join(' · ') : toHex(ctx.bgRgb)}</span><span class="s">mínimo ${ctx.minC}:1${ctx.bad.length ? ' · ignorado: ' + esc(ctx.bad.join(', ')) : ''}</span></div>`;
 
     els.cards.innerHTML = res.map((r, i) => {
       const chips = [];
@@ -352,7 +361,10 @@
       if (r.neutral) chips.push(`<span class="chip neutral">Neutro · sin tono</span>`);
       else chips.push(`<span class="chip ${r.hueOk ? 'ok' : 'bad'}">Tono ${r.hueOk ? '✓' : '✗'} · Δ ${r.dev.toFixed(0)}° de ${r.nearest.toFixed(0)}°</span>`);
       if (!r.neutral) chips.push(r.accent ? `<span class="chip accent">Acento · ${r.chromaRatio.toFixed(1)}× mediana</span>` : `<span class="chip ${r.chromaWarn ? 'warn' : 'ok'}">Croma ${r.chromaRatio.toFixed(1)}× mediana</span>`);
-      chips.push(r.isBg ? `<span class="chip neutral">Es el fondo</span>` : `<span class="chip ${r.crOk ? 'ok' : 'bad'}">Contraste ${r.cr.toFixed(2)}:1 ${r.crOk ? '✓' : '✗'}</span>`);
+      if (r.surface) chips.push(`<span class="chip accent">◼ Superficie</span>`);
+      if (r.onSurf.length === 1 && r.onSurf[0].sf.fallback) chips.push(`<span class="chip ${r.crOk ? 'ok' : 'bad'}">Contraste ${r.cr.toFixed(2)}:1 ${r.crOk ? '✓' : '✗'}</span>`);
+      else if (!r.onSurf.length) chips.push(`<span class="chip neutral">Es el fondo</span>`);
+      else r.onSurf.forEach(o => chips.push(`<span class="chip ${o.ok ? 'ok' : (r.crOk || r.surface ? 'neutral' : 'bad')}" title="${esc(label(o.sf))} ${o.sf.hex}">sobre ${esc(label(o.sf))} ${o.cr.toFixed(2)}:1 ${o.ok ? '✓' : '✗'}</span>`));
       const opt = s => {
         const hex = toHex(oklchToRgb(s.c));
         const twin = s.twin ? `<span class="chip warn" style="margin-top:4px">Se parece a ${esc(label(s.twin))}</span>` : (s.free === true ? `<span class="chip ok" style="margin-top:4px">Libre</span>` : '');
@@ -368,7 +380,7 @@
       }).join('')}</div>`;
       return `<article class="card ${r.fail ? 'fail' : ''}"><div class="sw selectable${selected === r.hex ? ' selected' : ''}" style="background:${r.hex}" data-sel="${r.hex}" role="button" tabindex="0" aria-pressed="${selected === r.hex}" title="${selected === r.hex ? 'Dejar de probarlo' : 'Probar este color en la página'}"></div><div class="meta">
         <div class="top">${r.name ? `<span class="name">${esc(r.name)}</span>` : ''}<span class="hex">${r.hex}</span><span class="okl">${fmtOk(r)}</span></div>
-        <div class="chips">${chips.join('')}${r.neutral ? '' : `<button class="chip pinbtn" data-pin="${i}" aria-pressed="${r.pinned}" title="${r.pinned ? 'Quitar ancla' : 'Fijar como ancla: los demás se acomodan a este tono'}">${r.pinned ? 'Soltar ancla' : 'Fijar como ancla'}</button>`}</div>${strip}${sugg}</div></article>`;
+        <div class="chips">${chips.join('')}${r.neutral ? '' : `<button class="chip pinbtn" data-pin="${i}" aria-pressed="${r.pinned}" title="${r.pinned ? 'Quitar ancla' : 'Fijar como ancla: los demás se acomodan a este tono'}">${r.pinned ? 'Soltar ancla' : 'Fijar como ancla'}</button>`}<button class="chip pinbtn" data-surf="${i}" aria-pressed="${r.surface}" title="${r.surface ? 'Dejar de usarlo como superficie' : 'Marcar como superficie: los demás se miden sobre él'}">${r.surface ? 'Quitar superficie' : 'Usar como superficie'}</button></div>${strip}${sugg}</div></article>`;
     }).join('');
 
     drawWheel(res, ctx.targets);
@@ -414,6 +426,13 @@
     if (sw) { toggleSel(sw.dataset.sel); return; }
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.copy) copy(b.dataset.copy);
+    if (b.dataset.surf !== undefined) {
+      const idx = +b.dataset.surf; const { out } = readPalette();
+      const on = !out[idx].surf;
+      els.colors.value = out.map((c, i) => lineOf({ ...c, surf: i === idx ? on : c.surf })).join('\n');
+      analyze(); toast(on ? 'Superficie: ' + label(out[idx]) : 'Ya no es superficie');
+      return;
+    }
     if (b.dataset.pin !== undefined) {
       const idx = +b.dataset.pin; const { out } = readPalette();
       const on = !out[idx].pin;
@@ -433,10 +452,11 @@
     if (location.hash.length < 2) return null;
     const p = new URLSearchParams(location.hash.slice(1));
     const lines = (p.get('c') || '').split(',').map(s => {
+      const surf = s.endsWith('@'); if (surf) s = s.slice(0, -1);
       const pin = s.endsWith('*'); if (pin) s = s.slice(0, -1);
       const [hx, ...n] = s.split(':');
       const rgb = parseHex(hx); const name = slug(n.join(' '));
-      return rgb && toHex(rgb) + (name ? ' ' + name : '') + (pin ? ' *' : '');
+      return rgb && toHex(rgb) + (name ? ' ' + name : '') + (pin ? ' *' : '') + (surf ? ' @' : '');
     }).filter(Boolean);
     if (!lines.length) return null;
     const rule = p.get('r');
