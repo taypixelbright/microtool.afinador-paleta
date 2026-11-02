@@ -114,21 +114,32 @@
   // que se relaja hacia las puntas para no dar tints lavados ni shades sucios.
   const STEPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
   const L_CANON = { 50: 0.985, 100: 0.94, 200: 0.87, 300: 0.79, 400: 0.71, 500: 0.62, 600: 0.53, 700: 0.45, 800: 0.37, 900: 0.29, 950: 0.22 };
-  const L_TINT = L_CANON[50], L_SHADE = L_CANON[950];
-  function homeStep(c) {
+  // Rango de luz de una corrida. Los colores normales recorren todo (0.985 →
+  // 0.22). Las superficies no: son familias de fondos (papel, tarjeta, borde,
+  // divisor), así que una superficie clara baja solo hasta un gris medio y una
+  // oscura sube solo hasta otro, y conservan su croma íntegro para no perder la
+  // temperatura (cálida o fría) que las define.
+  const RANGE_FULL = { top: L_CANON[50], bottom: L_CANON[950] };
+  const RANGE_SURF_LIGHT = { top: 0.995, bottom: 0.52 };
+  const RANGE_SURF_DARK = { top: 0.60, bottom: 0.11 };
+  const rangeFor = c => !c.surf ? RANGE_FULL : (c.L >= 0.5 ? RANGE_SURF_LIGHT : RANGE_SURF_DARK);
+  // Luz de cada escalón reescalada al rango: mismas proporciones canónicas.
+  const stepL = (k, r) => r.bottom + (L_CANON[k] - RANGE_FULL.bottom) / (RANGE_FULL.top - RANGE_FULL.bottom) * (r.top - r.bottom);
+  function homeStep(c, r = rangeFor(c)) {
     // Los extremos quedan reservados: un base nunca aterriza en 50 ni en 950,
     // para que siempre haya corrida hacia ambos lados.
-    return STEPS.slice(1, -1).reduce((best, k) => Math.abs(L_CANON[k] - c.L) < Math.abs(L_CANON[best] - c.L) ? k : best, 500);
+    return STEPS.slice(1, -1).reduce((best, k) => Math.abs(stepL(k, r) - c.L) < Math.abs(stepL(best, r) - c.L) ? k : best, 500);
   }
   function ramp(c, o) {
-    const home = homeStep(c), Lh = L_CANON[home];
+    const r = rangeFor(c), home = homeStep(c, r), Lh = stepL(home, r);
+    const surf = !!c.surf;
     return STEPS.map(k => {
       if (k === home) return { k, c: { L: c.L, C: c.C, h: c.h }, base: true };
       const tint = k < home;
       // t: 0 en el base, 1 en la punta, siguiendo las proporciones canónicas.
-      const t = tint ? (L_CANON[k] - Lh) / (L_TINT - Lh) : (Lh - L_CANON[k]) / (Lh - L_SHADE);
-      const L = c.L + ((tint ? L_TINT : L_SHADE) - c.L) * t;
-      const C = c.C * (1 - (1 - o.cx) * t * (tint ? 1 : 0.7));
+      const t = tint ? (stepL(k, r) - Lh) / (r.top - Lh) : (Lh - stepL(k, r)) / (Lh - r.bottom);
+      const L = c.L + ((tint ? r.top : r.bottom) - c.L) * t;
+      const C = surf ? c.C : c.C * (1 - (1 - o.cx) * t * (tint ? 1 : 0.7));
       const h = (c.h + (tint ? o.ht : o.hs) * t + 360) % 360;
       return { k, c: clipToGamut({ L, C, h }) };
     });
