@@ -105,24 +105,32 @@
   }
 
   // ---------- Corridas (tints/shades) ----------
-  // 5 tints + base + 5 shades (50–950, 11 pasos como las rampas de Cachito) en
-  // OKLCH: tono constante salvo el giro voluntario hacia los extremos (el truco
-  // de Scale), luz con smoothstep y croma que se relaja hacia las puntas para
-  // no dar tints lavados ni shades sucios.
-  const L_TINT = 0.985, L_SHADE = 0.22;
+  // 11 pasos (50–950) en OKLCH. El base NO se fuerza al 500: aterriza en el
+  // escalón cuya luz canónica tiene más cerca (un color oscuro vive en 700, uno
+  // claro en 200) y la corrida se tiende desde ahí hacia las puntas. Así las
+  // escalas quedan homogéneas entre sí y los extremos siempre llegan igual de
+  // claro / oscuro. Tono constante salvo el giro voluntario (ht / hs) y croma
+  // que se relaja hacia las puntas para no dar tints lavados ni shades sucios.
+  const STEPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
+  const L_CANON = { 50: 0.985, 100: 0.94, 200: 0.87, 300: 0.79, 400: 0.71, 500: 0.62, 600: 0.53, 700: 0.45, 800: 0.37, 900: 0.29, 950: 0.22 };
+  const L_TINT = L_CANON[50], L_SHADE = L_CANON[950];
+  function homeStep(c) {
+    // Los extremos quedan reservados: un base nunca aterriza en 50 ni en 950,
+    // para que siempre haya corrida hacia ambos lados.
+    return STEPS.slice(1, -1).reduce((best, k) => Math.abs(L_CANON[k] - c.L) < Math.abs(L_CANON[best] - c.L) ? k : best, 500);
+  }
   function ramp(c, o) {
-    const ease = t => t * t * (3 - 2 * t);
-    const steps = [];
-    for (let i = 5; i >= 1; i--) {
-      const t = ease(i / 5);
-      steps.push({ k: i === 5 ? 50 : 500 - i * 100, c: clipToGamut({ L: c.L + (L_TINT - c.L) * t, C: c.C * (1 - (1 - o.cx) * t), h: (c.h + o.ht * t + 360) % 360 }) });
-    }
-    steps.push({ k: 500, c: { L: c.L, C: c.C, h: c.h }, base: true });
-    for (let i = 1; i <= 5; i++) {
-      const t = ease(i / 5);
-      steps.push({ k: i === 5 ? 950 : 500 + i * 100, c: clipToGamut({ L: c.L + (L_SHADE - c.L) * t, C: c.C * (1 - (1 - o.cx) * t * 0.7), h: (c.h + o.hs * t + 360) % 360 }) });
-    }
-    return steps;
+    const home = homeStep(c), Lh = L_CANON[home];
+    return STEPS.map(k => {
+      if (k === home) return { k, c: { L: c.L, C: c.C, h: c.h }, base: true };
+      const tint = k < home;
+      // t: 0 en el base, 1 en la punta, siguiendo las proporciones canónicas.
+      const t = tint ? (L_CANON[k] - Lh) / (L_TINT - Lh) : (Lh - L_CANON[k]) / (Lh - L_SHADE);
+      const L = c.L + ((tint ? L_TINT : L_SHADE) - c.L) * t;
+      const C = c.C * (1 - (1 - o.cx) * t * (tint ? 1 : 0.7));
+      const h = (c.h + (tint ? o.ht : o.hs) * t + 360) % 360;
+      return { k, c: clipToGamut({ L, C, h }) };
+    });
   }
 
   // ---------- UI ----------
