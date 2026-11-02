@@ -152,6 +152,7 @@
     });
   }
 
+  const lineOf = c => c.hex + (c.name ? ' ' + c.name : '') + (c.pin ? ' *' : '');
   function readPalette() {
     // Cada entrada (línea, coma o punto y coma) es un hex con nombre opcional: "#C9A96E arena".
     // Varios hex seguidos en una entrada siguen valiendo; el texto se pega al hex anterior.
@@ -166,7 +167,8 @@
       let cur = null, words = [];
       entry.split(/\s+/).filter(Boolean).forEach(tok => {
         const rgb = parseHex(tok);
-        if (rgb) { push(cur, words); cur = { src: tok, hex: toHex(rgb), rgb, ...rgbToOklch(rgb) }; words = []; }
+        if (rgb) { push(cur, words); cur = { src: tok, hex: toHex(rgb), rgb, ...rgbToOklch(rgb), pin: false }; words = []; }
+        else if (cur && tok === '*') cur.pin = true;
         else if (cur) words.push(tok);
         else bad.push(tok);
       });
@@ -188,15 +190,26 @@
     try { localStorage.setItem('afinador', JSON.stringify({ colors: els.colors.value, bg: els.bg.value, rule: els.rule.value, tol, wcag: minC, ht: ro.ht, hs: ro.hs, cx: +els.cx.value, sel: selected })); } catch (e) { }
     // Permalink: el hash siempre refleja la paleta analizada (replaceState no ensucia el historial).
     try {
-      const share = new URLSearchParams({ c: colors.map(c => c.hex.slice(1) + (c.name ? ':' + c.name : '')).join(','), bg: toHex(bgRgb).slice(1), r: els.rule.value, t: tol, w: els.wcag.value, ht: ro.ht, hs: ro.hs, cx: els.cx.value });
+      const share = new URLSearchParams({ c: colors.map(c => c.hex.slice(1) + (c.name ? ':' + c.name : '') + (c.pin ? '*' : '')).join(','), bg: toHex(bgRgb).slice(1), r: els.rule.value, t: tol, w: els.wcag.value, ht: ro.ht, hs: ro.hs, cx: els.cx.value });
       if (selected) share.set('sel', selected.slice(1));
       history.replaceState(null, '', colors.length ? '#' + share : location.pathname + location.search);
     } catch (e) { }
 
     if (selected && !colors.some(c => c.hex === selected)) selected = null;
     const chrom = colors.filter(c => c.C >= NEUTRAL_C);
+    // Ancla: el color fijado con "*" manda. Define el tono 0° de la regla y
+    // nunca recibe propuestas de tono; los demás se acomodan respecto a él.
+    const pinned = chrom.find(c => c.pin) || null;
     let rule = els.rule.value, anchor = chrom[0] ? chrom[0].h : 0, detected = false;
-    if (rule === 'auto') {
+    if (pinned) {
+      anchor = pinned.h;
+      if (rule === 'auto') {
+        // Con ancla fija se elige la regla que mejor explica al resto desde ese tono.
+        let best = null;
+        for (const rk of Object.keys(RULES)) { const sc = scoreRule(rk, anchor, chrom) + RULES[rk].offs.length * 0.01; if (!best || sc < best.sc) best = { sc, rk }; }
+        rule = best.rk; detected = true;
+      }
+    } else if (rule === 'auto') {
       const d = chrom.length ? detect(chrom) : { rule: 'mono', anchor: 0 };
       rule = d.rule; anchor = d.anchor; detected = true;
     } else if (chrom.length) {
@@ -218,6 +231,7 @@
       const neutral = c.C < NEUTRAL_C;
       let nearest = null, dev = 0;
       if (!neutral && targets.length) { nearest = targets.reduce((p, t) => angDist(c.h, t) < angDist(c.h, p) ? t : p, targets[0]); dev = angDist(c.h, nearest); }
+      if (c.pin && !neutral) dev = 0;
       const hueOk = neutral || dev <= tol;
       const chromaRatio = neutral || !cMed ? 1 : c.C / cMed;
       const accent = accents.has(c.hex);
@@ -263,10 +277,10 @@
       }
       // Marca parecidos en todas las propuestas.
       [...sugg, ...alt].forEach(s => { const tw = closest(s.c, others); s.twin = tw && tw.d < SIMILAR ? tw : null; });
-      return { ...c, neutral, nearest, dev, hueOk, chromaRatio, chromaWarn, accent, cr, crOk, isBg, fail, sugg, alt, ramp: ramp(c, ro) };
+      return { ...c, neutral, nearest, dev, hueOk, chromaRatio, chromaWarn, accent, pinned: !!c.pin, cr, crOk, isBg, fail, sugg, alt, ramp: ramp(c, ro) };
     });
 
-    render(results, { rule, anchor, detected, targets, bad, bgRgb, minC, cMed });
+    render(results, { rule, anchor, detected, targets, bad, bgRgb, minC, cMed, pinned });
     applyTheme(bgRgb);
   }
 
@@ -327,13 +341,14 @@
     const hueDevs = res.filter(r => !r.neutral).map(r => r.dev);
     const avgDev = hueDevs.length ? hueDevs.reduce((a, b) => a + b, 0) / hueDevs.length : 0;
     els.summary.innerHTML = `
-      <div class="stat"><span class="k">Regla</span><span class="v">${esc(RULES[ctx.rule].name)}</span><span class="s">${ctx.detected ? 'detectada' : 'fijada'} · ancla ${ctx.anchor.toFixed(0)}°</span></div>
+      <div class="stat"><span class="k">Regla</span><span class="v">${esc(RULES[ctx.rule].name)}</span><span class="s">${ctx.detected ? 'detectada' : 'fijada'} · ancla ${ctx.pinned ? label(ctx.pinned) + ' ★' : ctx.anchor.toFixed(0) + '°'}</span></div>
       <div class="stat"><span class="k">Veredicto</span><span class="v" style="color:${fails ? 'var(--bad)' : 'var(--ok)'}">${fails ? fails + (fails === 1 ? ' falla' : ' fallan') : 'Todo cuadra'}</span><span class="s">${warns ? warns + ' con aviso de croma' : res.length + ' colores evaluados'}</span></div>
       <div class="stat"><span class="k">Desvío medio</span><span class="v">${avgDev.toFixed(1)}°</span><span class="s">tolerancia ${els.tol.value}°</span></div>
       <div class="stat"><span class="k">Fondo</span><span class="v hex">${toHex(ctx.bgRgb)}</span><span class="s">mínimo ${ctx.minC}:1${ctx.bad.length ? ' · ignorado: ' + esc(ctx.bad.join(', ')) : ''}</span></div>`;
 
     els.cards.innerHTML = res.map((r, i) => {
       const chips = [];
+      if (r.pinned) chips.push(`<span class="chip accent">★ Ancla</span>`);
       if (r.neutral) chips.push(`<span class="chip neutral">Neutro · sin tono</span>`);
       else chips.push(`<span class="chip ${r.hueOk ? 'ok' : 'bad'}">Tono ${r.hueOk ? '✓' : '✗'} · Δ ${r.dev.toFixed(0)}° de ${r.nearest.toFixed(0)}°</span>`);
       if (!r.neutral) chips.push(r.accent ? `<span class="chip accent">Acento · ${r.chromaRatio.toFixed(1)}× mediana</span>` : `<span class="chip ${r.chromaWarn ? 'warn' : 'ok'}">Croma ${r.chromaRatio.toFixed(1)}× mediana</span>`);
@@ -353,7 +368,7 @@
       }).join('')}</div>`;
       return `<article class="card ${r.fail ? 'fail' : ''}"><div class="sw selectable${selected === r.hex ? ' selected' : ''}" style="background:${r.hex}" data-sel="${r.hex}" role="button" tabindex="0" aria-pressed="${selected === r.hex}" title="${selected === r.hex ? 'Dejar de probarlo' : 'Probar este color en la página'}"></div><div class="meta">
         <div class="top">${r.name ? `<span class="name">${esc(r.name)}</span>` : ''}<span class="hex">${r.hex}</span><span class="okl">${fmtOk(r)}</span></div>
-        <div class="chips">${chips.join('')}</div>${strip}${sugg}</div></article>`;
+        <div class="chips">${chips.join('')}${r.neutral ? '' : `<button class="chip pinbtn" data-pin="${i}" aria-pressed="${r.pinned}" title="${r.pinned ? 'Quitar ancla' : 'Fijar como ancla: los demás se acomodan a este tono'}">${r.pinned ? 'Soltar ancla' : 'Fijar como ancla'}</button>`}</div>${strip}${sugg}</div></article>`;
     }).join('');
 
     drawWheel(res, ctx.targets);
@@ -399,9 +414,16 @@
     if (sw) { toggleSel(sw.dataset.sel); return; }
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.copy) copy(b.dataset.copy);
+    if (b.dataset.pin !== undefined) {
+      const idx = +b.dataset.pin; const { out } = readPalette();
+      const on = !out[idx].pin;
+      els.colors.value = out.map((c, i) => lineOf({ ...c, pin: i === idx ? on : false })).join('\n');
+      analyze(); toast(on ? 'Ancla: ' + label(out[idx]) : 'Ancla liberada');
+      return;
+    }
     if (b.dataset.apply !== undefined) {
       const idx = +b.dataset.apply; const { out } = readPalette();
-      const lines = out.map((c, i) => (i === idx ? b.dataset.hex : c.hex) + (c.name ? ' ' + c.name : ''));
+      const lines = out.map((c, i) => lineOf({ ...c, hex: i === idx ? b.dataset.hex : c.hex }));
       els.colors.value = lines.join('\n'); analyze(); toast('Aplicado ' + b.dataset.hex);
     }
   });
@@ -411,9 +433,10 @@
     if (location.hash.length < 2) return null;
     const p = new URLSearchParams(location.hash.slice(1));
     const lines = (p.get('c') || '').split(',').map(s => {
+      const pin = s.endsWith('*'); if (pin) s = s.slice(0, -1);
       const [hx, ...n] = s.split(':');
       const rgb = parseHex(hx); const name = slug(n.join(' '));
-      return rgb && toHex(rgb) + (name ? ' ' + name : '');
+      return rgb && toHex(rgb) + (name ? ' ' + name : '') + (pin ? ' *' : '');
     }).filter(Boolean);
     if (!lines.length) return null;
     const rule = p.get('r');
