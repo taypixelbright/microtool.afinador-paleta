@@ -73,6 +73,7 @@
     tetra: { name: 'Tetrádica', offs: [0, 90, 180, 270] }
   };
   const NEUTRAL_C = 0.03;
+  const ACCENT_RATIO = 1.9; // por encima de esto un color destaca por croma
   const targetsFor = (rule, anchor) => RULES[rule].offs.map(o => (anchor + o + 360) % 360);
 
   function scoreRule(rule, anchor, chrom) {
@@ -206,6 +207,12 @@
     }
     const targets = chrom.length ? targetsFor(rule, anchor) : [];
     const cMed = chrom.length ? [...chrom].sort((a, b) => a.C - b.C)[Math.floor(chrom.length / 2)].C : 0;
+    // Acentos: una paleta con un color vivo y soportes apagados es una estructura
+    // válida (acento + soporte), no una falla de croma. Si pocos colores (≤ un
+    // tercio de los cromáticos) destacan por encima de 1.9× la mediana, se les
+    // reconoce el rol de acento en vez de arrastrarlos a la mediana.
+    const standouts = chrom.filter(c => cMed && c.C / cMed > ACCENT_RATIO);
+    const accents = standouts.length && standouts.length <= Math.max(1, Math.floor(chrom.length / 3)) ? new Set(standouts.map(c => c.hex)) : new Set();
 
     const results = colors.map(c => {
       const neutral = c.C < NEUTRAL_C;
@@ -213,7 +220,8 @@
       if (!neutral && targets.length) { nearest = targets.reduce((p, t) => angDist(c.h, t) < angDist(c.h, p) ? t : p, targets[0]); dev = angDist(c.h, nearest); }
       const hueOk = neutral || dev <= tol;
       const chromaRatio = neutral || !cMed ? 1 : c.C / cMed;
-      const chromaWarn = !neutral && (chromaRatio > 1.9 || chromaRatio < 0.45);
+      const accent = accents.has(c.hex);
+      const chromaWarn = !neutral && !accent && (chromaRatio > ACCENT_RATIO || chromaRatio < 0.45);
       const cr = contrast(c.rgb, bgRgb);
       const crOk = cr >= minC;
       const isBg = c.hex === toHex(bgRgb);
@@ -239,6 +247,11 @@
         }
       } else if (chromaWarn && cMed) {
         sugg.push({ t: 'Croma de la paleta', why: `Hoy pesa ${chromaRatio.toFixed(1)}× la mediana; esto lo iguala.`, c: clipToGamut({ L: c.L, C: cMed, h: c.h }) });
+      } else if (accent && cMed) {
+        // Al acento no se le baja el croma: se le ofrece un compañero calmado
+        // para superficies grandes (fondos, hovers) y el vivo queda para CTA.
+        const calm = clipToGamut({ L: c.L, C: Math.max(cMed * 1.4, c.C * 0.45), h: c.h });
+        sugg.push({ t: 'Compañero calmado', why: `Extra, no reemplazo: misma familia a ${(calm.C / cMed).toFixed(1)}× la mediana para áreas grandes; el acento vivo queda para botones y detalles.`, c: calm });
       }
       // Otras posiciones de la regla: huecos que ningún color ocupa primero, luego los ocupados.
       if (!neutral && targets.length > 1) {
@@ -250,7 +263,7 @@
       }
       // Marca parecidos en todas las propuestas.
       [...sugg, ...alt].forEach(s => { const tw = closest(s.c, others); s.twin = tw && tw.d < SIMILAR ? tw : null; });
-      return { ...c, neutral, nearest, dev, hueOk, chromaRatio, chromaWarn, cr, crOk, isBg, fail, sugg, alt, ramp: ramp(c, ro) };
+      return { ...c, neutral, nearest, dev, hueOk, chromaRatio, chromaWarn, accent, cr, crOk, isBg, fail, sugg, alt, ramp: ramp(c, ro) };
     });
 
     render(results, { rule, anchor, detected, targets, bad, bgRgb, minC, cMed });
@@ -323,7 +336,7 @@
       const chips = [];
       if (r.neutral) chips.push(`<span class="chip neutral">Neutro · sin tono</span>`);
       else chips.push(`<span class="chip ${r.hueOk ? 'ok' : 'bad'}">Tono ${r.hueOk ? '✓' : '✗'} · Δ ${r.dev.toFixed(0)}° de ${r.nearest.toFixed(0)}°</span>`);
-      if (!r.neutral) chips.push(`<span class="chip ${r.chromaWarn ? 'warn' : 'ok'}">Croma ${r.chromaRatio.toFixed(1)}× mediana</span>`);
+      if (!r.neutral) chips.push(r.accent ? `<span class="chip accent">Acento · ${r.chromaRatio.toFixed(1)}× mediana</span>` : `<span class="chip ${r.chromaWarn ? 'warn' : 'ok'}">Croma ${r.chromaRatio.toFixed(1)}× mediana</span>`);
       chips.push(r.isBg ? `<span class="chip neutral">Es el fondo</span>` : `<span class="chip ${r.crOk ? 'ok' : 'bad'}">Contraste ${r.cr.toFixed(2)}:1 ${r.crOk ? '✓' : '✗'}</span>`);
       const opt = s => {
         const hex = toHex(oklchToRgb(s.c));

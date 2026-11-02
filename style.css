@@ -115,6 +115,7 @@ img { max-width: 100%; }
   .chip.ok { background: var(--ok-bg); color: var(--ok); }
   .chip.warn { background: var(--warn-bg); color: var(--warn); }
   .chip.bad { background: var(--bad-bg); color: var(--bad); }
+  .chip.accent { background: var(--accent); color: var(--accent-ink); }
   .chip.neutral { background: var(--bg); color: var(--muted); }
   .sugg { display: grid; gap: 8px; margin-top: 4px; padding-top: 10px; border-top: 1px dashed var(--line); }
   .sugg h4 { margin: 0; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
