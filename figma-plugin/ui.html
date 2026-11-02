@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Afinador de Paleta</title>
+  <meta name="description" content="Valida la armonía y el contraste de una paleta de colores en OKLCH y propone sustitutos para los colores que no cuadran.">
+  <meta property="og:title" content="Afinador de Paleta">
+  <meta property="og:description" content="Armonía + contraste en OKLCH, con sustitutos listos para aplicar.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%232B5F5A'/%3E%3Ccircle cx='16' cy='16' r='5' fill='%23F4F3F7'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+:root { color-scheme: light; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+
+/* Layout: two-column workbench — controls + rueda a la izquierda, veredicto por color a la derecha; apila en móvil */
+  :root {
+    --bg: #F4F3F7;
+    --panel: #FFFFFF;
+    --fg: #1B1A22;
+    --muted: #6B6878;
+    --line: #DBD9E3;
+    --accent: #2B5F5A;
+    --accent-ink: #FFFFFF;
+    --ok: #2E7D4F;
+    --warn: #B7791F;
+    --bad: #B8323A;
+    --ok-bg: #E4F3EA;
+    --warn-bg: #FBF0DA;
+    --bad-bg: #FBE3E4;
+    --font: "Manrope", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #15141A; --panel: #1E1D25; --fg: #ECEAF2; --muted: #9D9AAB; --line: #33313D;
+      --accent: #7FC7BE; --accent-ink: #0F1F1D;
+      --ok: #6FCB93; --warn: #E2B35A; --bad: #F08A90;
+      --ok-bg: #1D3327; --warn-bg: #3A2E14; --bad-bg: #3D1F22;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15141A; --panel: #1E1D25; --fg: #ECEAF2; --muted: #9D9AAB; --line: #33313D;
+    --accent: #7FC7BE; --accent-ink: #0F1F1D;
+    --ok: #6FCB93; --warn: #E2B35A; --bad: #F08A90;
+    --ok-bg: #1D3327; --warn-bg: #3A2E14; --bad-bg: #3D1F22;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 15px; line-height: 1.5;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 28px 48px;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; display: grid; gap: 24px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; }
+  h1 { font-size: 26px; font-weight: 800; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  header p { margin: 0; color: var(--muted); max-width: 60ch; }
+  .layout { display: grid; grid-template-columns: minmax(300px, 380px) 1fr; gap: 24px; align-items: start; }
+  @media (max-width: 820px) { .layout { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; min-width: 0; }
+  .stack { display: grid; gap: 14px; }
+  label.lbl { display: block; font-size: 11.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  textarea, select, input[type="text"] {
+    width: 100%; font: 500 14px/1.5 var(--mono); color: var(--fg); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+  }
+  textarea { min-height: 150px; resize: vertical; }
+  select, input[type="text"] { font-family: var(--font); }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+  :is(textarea, select, input, button):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .row > * { min-width: 0; }
+  .grow { flex: 1 1 120px; }
+  .swatch-in { width: 38px; height: 38px; border-radius: 8px; border: 1px solid var(--line); flex: none; }
+  button {
+    font: 700 13.5px var(--font); color: var(--fg); background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 14px; cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button.small { padding: 5px 10px; font-size: 12.5px; }
+  button:hover { filter: brightness(0.96); }
+  .tol-val { font-family: var(--mono); font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .hint { font-size: 13px; color: var(--muted); margin: 0; }
+
+  /* Rueda */
+  .wheel { width: 100%; max-width: 300px; margin: 0 auto; display: block; }
+  .wheel text { font-family: var(--mono); font-size: 9px; fill: var(--muted); }
+  .wheel .ring { fill: none; stroke: var(--line); stroke-width: 1; }
+  .wheel .tick { stroke: var(--line); }
+  .wheel .target { fill: var(--panel); stroke: var(--fg); stroke-width: 1.5; }
+  .wheel .dot { stroke: var(--panel); stroke-width: 2; }
+  .wheel .dot.bad { stroke: var(--bad); stroke-width: 3; }
+  .wheel .link { stroke: var(--bad); stroke-width: 1.5; stroke-dasharray: 3 3; }
+
+  /* Resumen */
+  .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .stat { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 2px; min-width: 0; }
+  .stat .k { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+  .stat .v { font-size: 20px; font-weight: 800; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+  .stat .s { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+
+  /* Tarjetas de color */
+  .cards { display: grid; gap: 12px; }
+  .card { display: grid; grid-template-columns: 72px 1fr; gap: 14px; border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: var(--panel); min-width: 0; }
+  .card.fail { border-color: var(--bad); }
+  .card .sw { height: 72px; border-radius: 10px; border: 1px solid var(--line); }
+  .card .sw.selectable { cursor: pointer; }
+  .card .sw.selected { outline: 3px solid var(--accent); outline-offset: 2px; }
+  body { transition: background-color .25s; }
+  @media (prefers-reduced-motion: reduce) { body { transition: none; } }
+  .card .meta { display: grid; gap: 8px; min-width: 0; }
+  .card .top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+  .hex { font-family: var(--mono); font-weight: 500; font-size: 14px; }
+  .card .name { font-weight: 800; font-size: 15px; letter-spacing: -0.01em; }
+  .okl { font-family: var(--mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ramp { display: flex; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
+  .ramp .rstep { flex: 1 1 0; height: 28px; min-width: 0; padding: 0; border: none; border-radius: 0; cursor: pointer; }
+  .ramp .rstep.base { box-shadow: inset 0 0 0 2px var(--panel); }
+  .ramp .rstep:hover { filter: none; box-shadow: inset 0 0 0 2px var(--fg); }
+  .chip { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; font-variant-numeric: tabular-nums; }
+  .chip.ok { background: var(--ok-bg); color: var(--ok); }
+  .chip.warn { background: var(--warn-bg); color: var(--warn); }
+  .chip.bad { background: var(--bad-bg); color: var(--bad); }
+  .chip.pinbtn { cursor: pointer; background: transparent; border: 1px dashed var(--line); color: var(--muted); font: inherit; font-size: 12px; font-weight: 700; padding: 2px 9px; }
+  .chip.pinbtn:hover, .chip.pinbtn[aria-pressed="true"] { border-style: solid; border-color: var(--accent); color: var(--accent); }
+  .chip.accent { background: var(--accent); color: var(--accent-ink); }
+  .chip.neutral { background: var(--bg); color: var(--muted); }
+  .sugg { display: grid; gap: 8px; margin-top: 4px; padding-top: 10px; border-top: 1px dashed var(--line); }
+  .sugg h4 { margin: 0; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
+  .opt { display: grid; grid-template-columns: 40px 1fr; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: 8px; min-width: 0; }
+  .opt .sw { height: 40px; border-radius: 7px; border: 1px solid var(--line); }
+  .opt .t { font-size: 12.5px; font-weight: 700; }
+  .opt .why { font-size: 11.5px; color: var(--muted); }
+  .opt .acts { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+  .opt .acts button { padding: 3px 8px; font-size: 11.5px; }
+  .opt.twin { border-style: dashed; }
+  .alts { margin-top: 6px; padding-top: 10px; border-top: 1px dashed var(--line); }
+  .alts summary { cursor: pointer; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .alts summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+  /* Export */
+  pre { margin: 0; font: 400 12.5px/1.6 var(--mono); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; }
+  .toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 999px; font-size: 13px; font-weight: 700; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Afinador de Paleta</h1>
+    <p>Mide cada color en OKLCH contra una regla armónica y el contraste sobre tu fondo. Lo que no cuadra sale marcado, con sustitutos listos.</p>
+  </header>
+
+  <div class="layout">
+    <aside class="panel stack">
+      <div>
+        <label class="lbl" for="colors">Colores (hex + nombre opcional, uno por línea)</label>
+        <textarea id="colors" spellcheck="false">#C9A96E arena
+#8A9A7B salvia
+#F2E8DC crema
+#3B3A36 carbón
+#2F6BB0 intruso</textarea>
+        <p class="hint" style="margin-top:6px">Sufijos: <code>*</code> fija ese color como ancla: define la regla y los demás se acomodan a él; <code>@</code> lo declara superficie (fondo sobre el que se miden los demás). El nombre se vuelve token CSS (<code>--arena</code>); sin nombre queda <code>--color-n</code>. Ejemplo: paleta cálida y un azul que no pertenece.</p>
+      </div>
+      <div>
+        <label class="lbl" for="bg">Fondo para contraste</label>
+        <div class="row">
+          <div class="swatch-in" id="bgSw"></div>
+          <input class="grow" type="text" id="bg" value="#F2E8DC" spellcheck="false">
+        </div>
+        <p class="hint" style="margin-top:6px">Si marcas colores con <code>@</code> (light, dark…), son tus superficies: cada color pasa si contrasta sobre al menos una y ves sobre cuál. Sin superficies marcadas, este campo es el único fondo. También pinta esta página de ese color; con clic en el swatch grande de una tarjeta, todos los textos se vuelven de ese color y ves el contraste real.</p>
+      </div>
+      <div>
+        <label class="lbl" for="rule">Regla armónica</label>
+        <select id="rule">
+          <option value="auto">Detectar automáticamente</option>
+          <option value="mono">Monocromática</option>
+          <option value="analog">Análoga (±30°)</option>
+          <option value="comp">Complementaria (180°)</option>
+          <option value="split">Complementaria dividida (150° / 210°)</option>
+          <option value="tri">Triádica (120°)</option>
+          <option value="tetra">Tetrádica (90°)</option>
+        </select>
+        <p class="hint" style="margin-top:6px">El patrón de ángulos que deben guardar los tonos entre sí. En automático se prueba cada regla con cada color como ancla y gana la que mejor explica tu paleta.</p>
+      </div>
+      <div>
+        <label class="lbl" for="tol">Tolerancia de tono <span class="tol-val" id="tolVal">12°</span></label>
+        <input type="range" id="tol" min="4" max="30" step="1" value="12">
+        <p class="hint" style="margin-top:6px">Cuántos grados puede desviarse un color de su posición en la regla antes de marcarse como falla.</p>
+      </div>
+      <div>
+        <label class="lbl" for="wcag">Contraste mínimo</label>
+        <select id="wcag">
+          <option value="3">3:1 — texto grande / UI (AA)</option>
+          <option value="4.5" selected>4.5:1 — texto normal (AA)</option>
+          <option value="7">7:1 — texto normal (AAA)</option>
+        </select>
+        <p class="hint" style="margin-top:6px">Umbral WCAG 2.1 contra el fondo. 3:1 basta para texto grande e iconos; 4.5:1 para texto de lectura; 7:1 es el nivel AAA.</p>
+      </div>
+      <div>
+        <label class="lbl" for="ht">Giro de tono en tints <span class="tol-val" id="htVal">0°</span></label>
+        <input type="range" id="ht" min="-30" max="30" step="1" value="0">
+        <p class="hint" style="margin-top:6px">Desvía el tono conforme la corrida aclara (50–950, estilo Scale): + gira hacia un lado de la rueda, − hacia el otro. Un giro suave hacia amarillo da tints más cálidos; 0° = tono constante.</p>
+      </div>
+      <div>
+        <label class="lbl" for="hs">Giro de tono en shades <span class="tol-val" id="hsVal">0°</span></label>
+        <input type="range" id="hs" min="-30" max="30" step="1" value="0">
+        <p class="hint" style="margin-top:6px">Lo mismo pero hacia el extremo oscuro. El clásico: un giro hacia azul da shades profundos en vez de cafés apagados.</p>
+      </div>
+      <div>
+        <label class="lbl" for="cx">Croma en los extremos <span class="tol-val" id="cxVal">35%</span></label>
+        <input type="range" id="cx" min="0" max="100" step="5" value="35">
+        <p class="hint" style="margin-top:6px">Cuánto color conserva la corrida en el 50 y el 950: bajo = puntas casi neutras, 100% = mantienen el croma del base (puede recortarse al gamut).</p>
+      </div>
+      <div class="row">
+        <button class="primary" id="run">Analizar</button>
+        <button id="share">Compartir link</button>
+        <button id="reset">Restaurar ejemplo</button>
+      </div>
+      <p class="hint">Compartir copia un link con la paleta y los ajustes; quien lo abra ve el mismo análisis.</p>
+      <div>
+        <label class="lbl">Exportar corridas</label>
+        <div class="row">
+          <button class="small" id="copySvg">Copiar SVG para Figma</button>
+          <button class="small" id="copyJson">Copiar Tokens JSON</button>
+        </div>
+        <p class="hint" style="margin-top:6px">El SVG se pega directo en Figma (⌘V) como swatches con capas nombradas (<code>arena-500</code>). El JSON es formato Tokens Studio: impórtalo como set y conviértelo en variables.</p>
+      </div>
+        <div id="figmaMount"></div>
+      <div>
+        <label class="lbl">Rueda de tono (radio = croma)</label>
+        <svg class="wheel" id="wheel" viewBox="0 0 300 300" role="img" aria-label="Rueda de tono con los colores de la paleta"></svg>
+        <p class="hint">El mapa de la armonía: cada punto es un color (ángulo = tono, distancia al centro = croma) y los aros huecos son las posiciones que pide la regla. Una línea punteada une al que falla con su posición. Los grises (croma &lt; 0.03) no se evalúan por tono.</p>
+      </div>
+    </aside>
+
+    <main class="stack">
+      <div class="summary" id="summary"></div>
+      <div class="cards" id="cards"></div>
+      <div class="panel stack">
+        <div class="row" style="justify-content:space-between">
+          <label class="lbl" style="margin:0">Tokens CSS</label>
+          <button class="small" id="copyCss">Copiar</button>
+        </div>
+        <pre id="css"></pre>
+      </div>
+    </main>
+  </div>
+</div>
+<div class="toast" id="toast">Copiado</div>
+<script>
+(function () {
+  // ---------- Color math (sRGB <-> OKLCH) ----------
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const toLin = c => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  const toSrgb = c => c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+
+  function parseHex(s) {
+    let h = s.trim().replace(/^#/, '');
+    if (/^[0-9a-f]{3}$/i.test(h)) h = h.split('').map(x => x + x).join('');
+    if (!/^[0-9a-f]{6}$/i.test(h)) return null;
+    const n = parseInt(h, 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(v => v / 255);
+  }
+  const toHex = rgb => '#' + rgb.map(v => Math.round(clamp(v, 0, 1) * 255).toString(16).padStart(2, '0')).join('').toUpperCase();
+
+  function rgbToOklab([r, g, b]) {
+    r = toLin(r); g = toLin(g); b = toLin(b);
+    const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+    const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+    const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+    return [
+      0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+      1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+      0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+    ];
+  }
+  function oklabToRgbLin([L, a, b]) {
+    let l = L + 0.3963377774 * a + 0.2158037573 * b;
+    let m = L - 0.1055613458 * a - 0.0638541728 * b;
+    let s = L - 0.0894841775 * a - 1.2914855480 * b;
+    l = l * l * l; m = m * m * m; s = s * s * s;
+    return [
+      4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+      -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+      -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
+    ];
+  }
+  function rgbToOklch(rgb) {
+    const [L, a, b] = rgbToOklab(rgb);
+    const C = Math.hypot(a, b);
+    let h = Math.atan2(b, a) * 180 / Math.PI; if (h < 0) h += 360;
+    return { L, C, h: C < 1e-4 ? 0 : h };
+  }
+  function oklchToRgb({ L, C, h }) {
+    const r = h * Math.PI / 180;
+    return oklabToRgbLin([L, C * Math.cos(r), C * Math.sin(r)]).map(toSrgb);
+  }
+  const inGamut = rgb => rgb.every(v => v >= -0.0005 && v <= 1.0005);
+  function clipToGamut(c) {
+    let C = c.C;
+    for (let i = 0; i < 60 && !inGamut(oklchToRgb({ L: c.L, C, h: c.h })); i++) C *= 0.94;
+    return { L: c.L, C: Math.max(0, C), h: c.h };
+  }
+  const lum = rgb => { const [r, g, b] = rgb.map(toLin); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const contrast = (a, b) => { const la = lum(a), lb = lum(b); return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05); };
+  const angDist = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; };
+  const fmtOk = c => `oklch(${(c.L * 100).toFixed(1)}% ${c.C.toFixed(3)} ${c.h.toFixed(1)})`;
+  // Distancia perceptual (ΔE OK): ~0.02 apenas distinguible, <0.08 se leen como "el mismo color".
+  const SIMILAR = 0.08;
+  const toLab = c => { const r = c.h * Math.PI / 180; return [c.L, c.C * Math.cos(r), c.C * Math.sin(r)]; };
+  const deltaE = (a, b) => { const [l1, a1, b1] = toLab(a), [l2, a2, b2] = toLab(b); return Math.hypot(l1 - l2, a1 - a2, b1 - b2); };
+  const closest = (c, list) => list.reduce((best, o) => { const d = deltaE(c, o); return !best || d < best.d ? { hex: o.hex, name: o.name, d } : best; }, null);
+  const mixHex = (a, b, t) => { const A = rgbToOklab(a), B = rgbToOklab(b); return toHex(oklabToRgbLin(A.map((v, i) => v + (B[i] - v) * t)).map(toSrgb)); };
+  const label = o => o.name || o.hex;
+
+  // ---------- Rules ----------
+  const RULES = {
+    mono: { name: 'Monocromática', offs: [0] },
+    analog: { name: 'Análoga', offs: [-30, 0, 30] },
+    comp: { name: 'Complementaria', offs: [0, 180] },
+    split: { name: 'Complementaria dividida', offs: [0, 150, 210] },
+    tri: { name: 'Triádica', offs: [0, 120, 240] },
+    tetra: { name: 'Tetrádica', offs: [0, 90, 180, 270] }
+  };
+  const NEUTRAL_C = 0.03;
+  const ACCENT_RATIO = 1.9; // por encima de esto un color destaca por croma
+  const targetsFor = (rule, anchor) => RULES[rule].offs.map(o => (anchor + o + 360) % 360);
+
+  function scoreRule(rule, anchor, chrom) {
+    const t = targetsFor(rule, anchor);
+    return chrom.reduce((s, c) => s + Math.min(...t.map(x => angDist(c.h, x))), 0);
+  }
+  function detect(chrom) {
+    let best = null;
+    for (const rule of Object.keys(RULES)) for (const a of chrom) {
+      const sc = scoreRule(rule, a.h, chrom);
+      const key = sc + RULES[rule].offs.length * 0.01; // tie-break: simpler rule wins
+      if (!best || key < best.key) best = { rule, anchor: a.h, score: sc, key };
+    }
+    return best;
+  }
+
+  // ---------- Suggestions ----------
+  function fixContrast(c, bgRgb, min) {
+    // Move L away from the background until contrast is met; return the closest fix.
+    const bgL = rgbToOklch(bgRgb).L;
+    const dir = c.L >= bgL ? 1 : -1;
+    const tryDir = d => {
+      for (let L = c.L; L >= 0 && L <= 1; L += d * 0.005) {
+        const cand = clipToGamut({ L, C: c.C, h: c.h });
+        if (contrast(oklchToRgb(cand), bgRgb) >= min) return cand;
+      }
+      return null;
+    };
+    return tryDir(dir) || tryDir(-dir);
+  }
+
+  // ---------- Corridas (tints/shades) ----------
+  // 11 pasos (50–950) en OKLCH. El base NO se fuerza al 500: aterriza en el
+  // escalón cuya luz canónica tiene más cerca (un color oscuro vive en 700, uno
+  // claro en 200) y la corrida se tiende desde ahí hacia las puntas. Así las
+  // escalas quedan homogéneas entre sí y los extremos siempre llegan igual de
+  // claro / oscuro. Tono constante salvo el giro voluntario (ht / hs) y croma
+  // que se relaja hacia las puntas para no dar tints lavados ni shades sucios.
+  const STEPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
+  const L_CANON = { 50: 0.985, 100: 0.94, 200: 0.87, 300: 0.79, 400: 0.71, 500: 0.62, 600: 0.53, 700: 0.45, 800: 0.37, 900: 0.29, 950: 0.22 };
+  // Rango de luz de una corrida. Los colores normales recorren todo (0.985 →
+  // 0.22). Las superficies no: son familias de fondos (papel, tarjeta, borde,
+  // divisor), así que una superficie clara baja solo hasta un gris medio y una
+  // oscura sube solo hasta otro, y conservan su croma íntegro para no perder la
+  // temperatura (cálida o fría) que las define.
+  const RANGE_FULL = { top: L_CANON[50], bottom: L_CANON[950] };
+  const RANGE_SURF_LIGHT = { top: 0.995, bottom: 0.52 };
+  const RANGE_SURF_DARK = { top: 0.60, bottom: 0.11 };
+  const rangeFor = c => !c.surf ? RANGE_FULL : (c.L >= 0.5 ? RANGE_SURF_LIGHT : RANGE_SURF_DARK);
+  // Luz de cada escalón reescalada al rango: mismas proporciones canónicas.
+  const stepL = (k, r) => r.bottom + (L_CANON[k] - RANGE_FULL.bottom) / (RANGE_FULL.top - RANGE_FULL.bottom) * (r.top - r.bottom);
+  function homeStep(c, r = rangeFor(c)) {
+    // Los extremos quedan reservados: un base nunca aterriza en 50 ni en 950,
+    // para que siempre haya corrida hacia ambos lados.
+    return STEPS.slice(1, -1).reduce((best, k) => Math.abs(stepL(k, r) - c.L) < Math.abs(stepL(best, r) - c.L) ? k : best, 500);
+  }
+  function ramp(c, o) {
+    const r = rangeFor(c), home = homeStep(c, r), Lh = stepL(home, r);
+    const surf = !!c.surf;
+    return STEPS.map(k => {
+      if (k === home) return { k, c: { L: c.L, C: c.C, h: c.h }, base: true };
+      const tint = k < home;
+      // t: 0 en el base, 1 en la punta, siguiendo las proporciones canónicas.
+      const t = tint ? (stepL(k, r) - Lh) / (r.top - Lh) : (Lh - stepL(k, r)) / (Lh - r.bottom);
+      const L = c.L + ((tint ? r.top : r.bottom) - c.L) * t;
+      const C = surf ? c.C : c.C * (1 - (1 - o.cx) * t * (tint ? 1 : 0.7));
+      const h = (c.h + (tint ? o.ht : o.hs) * t + 360) % 360;
+      return { k, c: clipToGamut({ L, C, h }) };
+    });
+  }
+
+  // ---------- UI ----------
+  const $ = id => document.getElementById(id);
+  const els = { colors: $('colors'), bg: $('bg'), bgSw: $('bgSw'), rule: $('rule'), tol: $('tol'), tolVal: $('tolVal'), wcag: $('wcag'), ht: $('ht'), htVal: $('htVal'), hs: $('hs'), hsVal: $('hsVal'), cx: $('cx'), cxVal: $('cxVal'), summary: $('summary'), cards: $('cards'), wheel: $('wheel'), css: $('css'), toast: $('toast') };
+  const DEFAULT = { colors: '#C9A96E arena\n#8A9A7B salvia\n#F2E8DC crema\n#3B3A36 carbón\n#2F6BB0 intruso', bg: '#F2E8DC' };
+  // Nombre de token: minúsculas sin acentos, espacios a guiones. Vacío = sin nombre.
+  const slug = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  const tokenName = (r, i) => r.name || 'color-' + (i + 1);
+  const esc = s => s.replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
+
+  function toast(msg) { els.toast.textContent = msg; els.toast.classList.add('show'); setTimeout(() => els.toast.classList.remove('show'), 1400); }
+  function copy(text) {
+    navigator.clipboard.writeText(text).then(() => toast('Copiado')).catch(() => {
+      const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); toast('Copiado'); } catch (e) { toast('No se pudo copiar'); }
+      ta.remove();
+    });
+  }
+
+  const lineOf = c => c.hex + (c.name ? ' ' + c.name : '') + (c.pin ? ' *' : '') + (c.surf ? ' @' : '');
+  function readPalette() {
+    // Cada entrada (línea, coma o punto y coma) es un hex con nombre opcional: "#C9A96E arena".
+    // Varios hex seguidos en una entrada siguen valiendo; el texto se pega al hex anterior.
+    const out = []; const bad = []; const seen = {};
+    const push = (c, words) => {
+      if (!c) return;
+      let name = slug(words.join(' '));
+      if (name) { seen[name] = (seen[name] || 0) + 1; if (seen[name] > 1) name += '-' + seen[name]; }
+      out.push({ ...c, name });
+    };
+    els.colors.value.split(/[\n,;]+/).forEach(entry => {
+      let cur = null, words = [];
+      entry.split(/\s+/).filter(Boolean).forEach(tok => {
+        const rgb = parseHex(tok);
+        if (rgb) { push(cur, words); cur = { src: tok, hex: toHex(rgb), rgb, ...rgbToOklch(rgb), pin: false, surf: false }; words = []; }
+        else if (cur && tok === '*') cur.pin = true;
+        else if (cur && tok === '@') cur.surf = true;
+        else if (cur) words.push(tok);
+        else bad.push(tok);
+      });
+      push(cur, words);
+    });
+    return { out, bad };
+  }
+
+  function analyze() {
+    const { out: colors, bad } = readPalette();
+    const bgRgb = parseHex(els.bg.value) || parseHex(DEFAULT.bg);
+    els.bgSw.style.background = toHex(bgRgb);
+    const tol = +els.tol.value; const minC = +els.wcag.value;
+    const ro = { ht: +els.ht.value, hs: +els.hs.value, cx: +els.cx.value / 100 };
+    els.tolVal.textContent = tol + '°';
+    els.htVal.textContent = (ro.ht > 0 ? '+' : '') + ro.ht + '°';
+    els.hsVal.textContent = (ro.hs > 0 ? '+' : '') + ro.hs + '°';
+    els.cxVal.textContent = els.cx.value + '%';
+    try { localStorage.setItem('afinador', JSON.stringify({ colors: els.colors.value, bg: els.bg.value, rule: els.rule.value, tol, wcag: minC, ht: ro.ht, hs: ro.hs, cx: +els.cx.value, sel: selected })); } catch (e) { }
+    // Permalink: el hash siempre refleja la paleta analizada (replaceState no ensucia el historial).
+    try {
+      const share = new URLSearchParams({ c: colors.map(c => c.hex.slice(1) + (c.name ? ':' + c.name : '') + (c.pin ? '*' : '') + (c.surf ? '@' : '')).join(','), bg: toHex(bgRgb).slice(1), r: els.rule.value, t: tol, w: els.wcag.value, ht: ro.ht, hs: ro.hs, cx: els.cx.value });
+      if (selected) share.set('sel', selected.slice(1));
+      history.replaceState(null, '', colors.length ? '#' + share : location.pathname + location.search);
+    } catch (e) { }
+
+    if (selected && !colors.some(c => c.hex === selected)) selected = null;
+    // Superficies: colores marcados con "@" (light, dark…). Cada color pasa
+    // contraste si lo cumple sobre AL MENOS una superficie; se reporta sobre
+    // cuál. Sin superficies declaradas, el campo "Fondo" es la única.
+    const declared = colors.filter(c => c.surf);
+    const surfaces = declared.length ? declared : [{ hex: toHex(bgRgb), rgb: bgRgb, name: '', fallback: true }];
+    const chrom = colors.filter(c => c.C >= NEUTRAL_C);
+    // Ancla: el color fijado con "*" manda. Define el tono 0° de la regla y
+    // nunca recibe propuestas de tono; los demás se acomodan respecto a él.
+    const pinned = chrom.find(c => c.pin) || null;
+    let rule = els.rule.value, anchor = chrom[0] ? chrom[0].h : 0, detected = false;
+    if (pinned) {
+      anchor = pinned.h;
+      if (rule === 'auto') {
+        // Con ancla fija se elige la regla que mejor explica al resto desde ese tono.
+        let best = null;
+        for (const rk of Object.keys(RULES)) { const sc = scoreRule(rk, anchor, chrom) + RULES[rk].offs.length * 0.01; if (!best || sc < best.sc) best = { sc, rk }; }
+        rule = best.rk; detected = true;
+      }
+    } else if (rule === 'auto') {
+      const d = chrom.length ? detect(chrom) : { rule: 'mono', anchor: 0 };
+      rule = d.rule; anchor = d.anchor; detected = true;
+    } else if (chrom.length) {
+      // With a fixed rule, pick the anchor that fits the palette best.
+      let best = null;
+      for (const a of chrom) { const sc = scoreRule(rule, a.h, chrom); if (!best || sc < best.sc) best = { sc, a: a.h }; }
+      anchor = best.a;
+    }
+    const targets = chrom.length ? targetsFor(rule, anchor) : [];
+    const cMed = chrom.length ? [...chrom].sort((a, b) => a.C - b.C)[Math.floor(chrom.length / 2)].C : 0;
+    // Acentos: una paleta con un color vivo y soportes apagados es una estructura
+    // válida (acento + soporte), no una falla de croma. Si pocos colores (≤ un
+    // tercio de los cromáticos) destacan por encima de 1.9× la mediana, se les
+    // reconoce el rol de acento en vez de arrastrarlos a la mediana.
+    const standouts = chrom.filter(c => cMed && c.C / cMed > ACCENT_RATIO);
+    const accents = standouts.length && standouts.length <= Math.max(1, Math.floor(chrom.length / 3)) ? new Set(standouts.map(c => c.hex)) : new Set();
+
+    const results = colors.map(c => {
+      const neutral = c.C < NEUTRAL_C;
+      let nearest = null, dev = 0;
+      if (!neutral && targets.length) { nearest = targets.reduce((p, t) => angDist(c.h, t) < angDist(c.h, p) ? t : p, targets[0]); dev = angDist(c.h, nearest); }
+      if (c.pin && !neutral) dev = 0;
+      const hueOk = neutral || dev <= tol;
+      const chromaRatio = neutral || !cMed ? 1 : c.C / cMed;
+      const accent = accents.has(c.hex);
+      const chromaWarn = !neutral && !accent && (chromaRatio > ACCENT_RATIO || chromaRatio < 0.45);
+      const onSurf = surfaces.filter(sf => sf.hex !== c.hex).map(sf => { const v = contrast(c.rgb, sf.rgb); return { sf, cr: v, ok: v >= minC }; }).sort((a, b) => b.cr - a.cr);
+      const best = onSurf[0] || null;
+      const cr = best ? best.cr : Infinity;
+      const crOk = !best || best.ok;
+      const isBg = !!c.surf || (surfaces.length === 1 && c.hex === surfaces[0].hex);
+      const surfRgb = best ? best.sf.rgb : bgRgb;
+      const fail = !hueOk || (!crOk && !isBg);
+      const others = colors.filter(o => o !== c);
+      const sugg = []; const alt = [];
+      if (fail) {
+        const h = hueOk ? c.h : nearest;
+        const s1 = clipToGamut({ L: c.L, C: c.C, h });
+        if (!hueOk) sugg.push({ t: 'Tono corregido', why: `Gira ${dev.toFixed(0)}° hasta ${nearest.toFixed(0)}°; conserva luz y croma.`, c: s1 });
+        const s2 = fixContrast(s1, surfRgb, minC);
+        if (s2 && (!crOk || !hueOk)) {
+          const r2 = contrast(oklchToRgb(s2), surfRgb);
+          sugg.push({ t: 'Tono + contraste', why: `Ajusta la luz hasta ${r2.toFixed(2)}:1 sobre ${best && best.sf.name ? best.sf.name : 'el fondo'}.`, c: s2 });
+        }
+        if (!hueOk && cMed) sugg.push({ t: 'Croma de la paleta', why: `Lleva el croma a la mediana (${cMed.toFixed(3)}) para que pese igual que el resto.`, c: clipToGamut({ L: c.L, C: cMed, h }) });
+        // Si el sustituto cercano se confunde con otro color, ofrece una versión separada en luz.
+        const twin = closest(s1, others);
+        if (twin && twin.d < SIMILAR) {
+          const dir = c.L >= 0.5 ? -1 : 1;
+          const s4 = clipToGamut({ L: clamp(c.L + dir * 0.18, 0.08, 0.96), C: c.C, h });
+          sugg.push({ t: 'Mismo tono, otra luz', why: `El tono corregido se parece a ${label(twin)}; esta versión se separa en luminosidad.`, c: s4 });
+        }
+      } else if (chromaWarn && cMed) {
+        sugg.push({ t: 'Croma de la paleta', why: `Hoy pesa ${chromaRatio.toFixed(1)}× la mediana; esto lo iguala.`, c: clipToGamut({ L: c.L, C: cMed, h: c.h }) });
+      } else if (accent && cMed) {
+        // Al acento no se le baja el croma: se le ofrece un compañero calmado
+        // para superficies grandes (fondos, hovers) y el vivo queda para CTA.
+        const calm = clipToGamut({ L: c.L, C: Math.max(cMed * 1.4, c.C * 0.45), h: c.h });
+        sugg.push({ t: 'Compañero calmado', why: `Extra, no reemplazo: misma familia a ${(calm.C / cMed).toFixed(1)}× la mediana para áreas grandes; el acento vivo queda para botones y detalles.`, c: calm });
+      }
+      // Otras posiciones de la regla: huecos que ningún color ocupa primero, luego los ocupados.
+      if (!neutral && targets.length > 1) {
+        targets.filter(t => t !== nearest).forEach(t => {
+          const occ = others.filter(o => o.C >= NEUTRAL_C && angDist(o.h, t) <= tol);
+          alt.push({ t: `Posición ${t.toFixed(0)}°`, free: !occ.length, why: occ.length ? `Ocupado por ${occ.map(label).join(', ')}` : 'Hueco libre en la regla', c: clipToGamut({ L: c.L, C: c.C, h: t }) });
+        });
+        alt.sort((a, b) => (b.free - a.free));
+      }
+      // Marca parecidos en todas las propuestas.
+      [...sugg, ...alt].forEach(s => { const tw = closest(s.c, others); s.twin = tw && tw.d < SIMILAR ? tw : null; });
+      return { ...c, neutral, nearest, dev, hueOk, chromaRatio, chromaWarn, accent, pinned: !!c.pin, surface: !!c.surf, onSurf, cr, crOk, isBg, fail, sugg, alt, ramp: ramp(c, ro) };
+    });
+
+    render(results, { rule, anchor, detected, targets, bad, bgRgb, minC, cMed, pinned, surfaces: declared });
+    applyTheme(bgRgb);
+  }
+
+  // ---------- Export (Figma / Tokens Studio) ----------
+  // Figma pega SVG del portapapeles conservando los id como nombres de capa:
+  // un grupo por color, un rect por paso (arena-500). Sin plugin ni API.
+  function figmaSvg(res) {
+    const S = 48, GAP = 8;
+    const w = 11 * S + 10 * GAP;
+    let y = 0; const rows = [];
+    res.forEach((r, i) => {
+      const n = tokenName(r, i);
+      rows.push(`<g id="${n}">` + r.ramp.map((s, j) =>
+        `<rect id="${n}-${s.k}" x="${j * (S + GAP)}" y="${y}" width="${S}" height="${S}" rx="6" fill="${toHex(oklchToRgb(s.c))}"/>`
+      ).join('') + '</g>');
+      y += S + GAP;
+    });
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${y - GAP}" viewBox="0 0 ${w} ${y - GAP}">${rows.join('')}</svg>`;
+  }
+  // Formato Tokens Studio: un set "global" con grupos por color y los 11 pasos.
+  function tokensJson(res) {
+    const g = {};
+    res.forEach((r, i) => {
+      const o = {};
+      r.ramp.forEach(s => { o[s.k] = { value: toHex(oklchToRgb(s.c)), type: 'color' }; });
+      g[tokenName(r, i)] = o;
+    });
+    return JSON.stringify({ global: g }, null, 2);
+  }
+
+  let lastRes = null;
+  let selected = null; // hex del color "probado" en la página
+  // El fondo elegido pinta la página de verdad (también los paneles: nada de
+  // blanco encima), y el tema claro/oscuro se decide por su luminosidad. Con un
+  // color seleccionado, TODO el texto se vuelve de ese color —ese es el preview
+  // de contraste—, el secundario como versión atenuada hacia el fondo, y los
+  // acentos (botones, sliders, focus) lo acompañan.
+  function applyTheme(bgRgb) {
+    const root = document.documentElement;
+    const bgHex = toHex(bgRgb);
+    root.style.setProperty('--bg', bgHex);
+    root.style.setProperty('--panel', bgHex);
+    root.dataset.theme = rgbToOklch(bgRgb).L < 0.5 ? 'dark' : 'light';
+    if (selected) {
+      const rgb = parseHex(selected);
+      root.style.setProperty('--fg', selected);
+      root.style.setProperty('--muted', mixHex(rgb, bgRgb, 0.35));
+      root.style.setProperty('--accent', selected);
+      root.style.setProperty('--accent-ink', contrast(rgb, [1, 1, 1]) >= contrast(rgb, [0, 0, 0]) ? '#FFFFFF' : '#000000');
+    } else {
+      ['--fg', '--muted', '--accent', '--accent-ink'].forEach(p => root.style.removeProperty(p));
+    }
+  }
+  function render(res, ctx) {
+    lastRes = res;
+    const fails = res.filter(r => r.fail).length;
+    const warns = res.filter(r => !r.fail && r.chromaWarn).length;
+    const hueDevs = res.filter(r => !r.neutral).map(r => r.dev);
+    const avgDev = hueDevs.length ? hueDevs.reduce((a, b) => a + b, 0) / hueDevs.length : 0;
+    els.summary.innerHTML = `
+      <div class="stat"><span class="k">Regla</span><span class="v">${esc(RULES[ctx.rule].name)}</span><span class="s">${ctx.detected ? 'detectada' : 'fijada'} · ancla ${ctx.pinned ? label(ctx.pinned) + ' ★' : ctx.anchor.toFixed(0) + '°'}</span></div>
+      <div class="stat"><span class="k">Veredicto</span><span class="v" style="color:${fails ? 'var(--bad)' : 'var(--ok)'}">${fails ? fails + (fails === 1 ? ' falla' : ' fallan') : 'Todo cuadra'}</span><span class="s">${warns ? warns + ' con aviso de croma' : res.length + ' colores evaluados'}</span></div>
+      <div class="stat"><span class="k">Desvío medio</span><span class="v">${avgDev.toFixed(1)}°</span><span class="s">tolerancia ${els.tol.value}°</span></div>
+      <div class="stat"><span class="k">${ctx.surfaces.length ? 'Superficies' : 'Fondo'}</span><span class="v ${ctx.surfaces.length ? '' : 'hex'}">${ctx.surfaces.length ? ctx.surfaces.map(label).map(esc).join(' · ') : toHex(ctx.bgRgb)}</span><span class="s">mínimo ${ctx.minC}:1${ctx.bad.length ? ' · ignorado: ' + esc(ctx.bad.join(', ')) : ''}</span></div>`;
+
+    els.cards.innerHTML = res.map((r, i) => {
+      const chips = [];
+      if (r.pinned) chips.push(`<span class="chip accent">★ Ancla</span>`);
+      if (r.neutral) chips.push(`<span class="chip neutral">Neutro · sin tono</span>`);
+      else chips.push(`<span class="chip ${r.hueOk ? 'ok' : 'bad'}">Tono ${r.hueOk ? '✓' : '✗'} · Δ ${r.dev.toFixed(0)}° de ${r.nearest.toFixed(0)}°</span>`);
+      if (!r.neutral) chips.push(r.accent ? `<span class="chip accent">Acento · ${r.chromaRatio.toFixed(1)}× mediana</span>` : `<span class="chip ${r.chromaWarn ? 'warn' : 'ok'}">Croma ${r.chromaRatio.toFixed(1)}× mediana</span>`);
+      if (r.surface) chips.push(`<span class="chip accent">◼ Superficie</span>`);
+      if (r.onSurf.length === 1 && r.onSurf[0].sf.fallback) chips.push(`<span class="chip ${r.crOk ? 'ok' : 'bad'}">Contraste ${r.cr.toFixed(2)}:1 ${r.crOk ? '✓' : '✗'}</span>`);
+      else if (!r.onSurf.length) chips.push(`<span class="chip neutral">Es el fondo</span>`);
+      else r.onSurf.forEach(o => chips.push(`<span class="chip ${o.ok ? 'ok' : (r.crOk || r.surface ? 'neutral' : 'bad')}" title="${esc(label(o.sf))} ${o.sf.hex}">sobre ${esc(label(o.sf))} ${o.cr.toFixed(2)}:1 ${o.ok ? '✓' : '✗'}</span>`));
+      const opt = s => {
+        const hex = toHex(oklchToRgb(s.c));
+        const twin = s.twin ? `<span class="chip warn" style="margin-top:4px">Se parece a ${esc(label(s.twin))}</span>` : (s.free === true ? `<span class="chip ok" style="margin-top:4px">Libre</span>` : '');
+        return `<div class="opt ${s.twin ? 'twin' : ''}"><div class="sw" style="background:${hex}"></div><div style="min-width:0"><div class="t">${esc(s.t)}</div><div class="hex">${hex}</div><div class="why">${esc(s.why)}</div>${twin}
+          <div class="acts"><button class="small" data-apply="${i}" data-hex="${hex}">Aplicar</button><button class="small" data-copy="${hex}">Copiar</button></div></div></div>`;
+      };
+      const sugg = (r.sugg.length ? `<div class="sugg"><h4>${r.fail ? 'Sustitutos válidos' : 'Sugerencia'}</h4><div class="opts">${r.sugg.map(opt).join('')}</div></div>` : '')
+        + (r.alt.length ? `<details class="alts" ${r.fail ? 'open' : ''}><summary>Otras posiciones de la regla (${r.alt.filter(a => a.free).length} libres)</summary><div class="opts" style="margin-top:8px">${r.alt.map(opt).join('')}</div></details>` : '');
+      const n = tokenName(r, i);
+      const strip = `<div class="ramp" role="group" aria-label="Corrida de ${esc(n)}">${r.ramp.map(s => {
+        const hex = toHex(oklchToRgb(s.c));
+        return `<button class="rstep ${s.base ? 'base' : ''}" style="background:${hex}" data-copy="${hex}" title="--${esc(n)}-${s.k} · ${hex}" aria-label="Copiar ${hex} (${esc(n)}-${s.k})"></button>`;
+      }).join('')}</div>`;
+      return `<article class="card ${r.fail ? 'fail' : ''}"><div class="sw selectable${selected === r.hex ? ' selected' : ''}" style="background:${r.hex}" data-sel="${r.hex}" role="button" tabindex="0" aria-pressed="${selected === r.hex}" title="${selected === r.hex ? 'Dejar de probarlo' : 'Probar este color en la página'}"></div><div class="meta">
+        <div class="top">${r.name ? `<span class="name">${esc(r.name)}</span>` : ''}<span class="hex">${r.hex}</span><span class="okl">${fmtOk(r)}</span></div>
+        <div class="chips">${chips.join('')}${r.neutral ? '' : `<button class="chip pinbtn" data-pin="${i}" aria-pressed="${r.pinned}" title="${r.pinned ? 'Quitar ancla' : 'Fijar como ancla: los demás se acomodan a este tono'}">${r.pinned ? 'Soltar ancla' : 'Fijar como ancla'}</button>`}<button class="chip pinbtn" data-surf="${i}" aria-pressed="${r.surface}" title="${r.surface ? 'Dejar de usarlo como superficie' : 'Marcar como superficie: los demás se miden sobre él'}">${r.surface ? 'Quitar superficie' : 'Usar como superficie'}</button></div>${strip}${sugg}</div></article>`;
+    }).join('');
+
+    drawWheel(res, ctx.targets);
+    els.css.textContent = ':root {\n' + res.map((r, i) => {
+      const n = tokenName(r, i);
+      return [`  --${n}: ${fmtOk(r)}; /* ${r.hex}${r.fail ? ' · revisar' : ''} */`]
+        .concat(r.ramp.map(s => `  --${n}-${s.k}: ${fmtOk(s.c)}; /* ${toHex(oklchToRgb(s.c))} */`))
+        .join('\n');
+    }).join('\n\n') + '\n}';
+  }
+
+  function drawWheel(res, targets) {
+    const cx = 150, cy = 150, R = 118, maxC = Math.max(0.2, ...res.map(r => r.C));
+    const pt = (h, rad) => { const a = h * Math.PI / 180; return [cx + rad * Math.cos(a), cy - rad * Math.sin(a)]; };
+    let s = `<circle class="ring" cx="${cx}" cy="${cy}" r="${R}"/><circle class="ring" cx="${cx}" cy="${cy}" r="${R / 2}"/>`;
+    for (let h = 0; h < 360; h += 30) {
+      const [x1, y1] = pt(h, R - 5), [x2, y2] = pt(h, R + 5), [tx, ty] = pt(h, R + 16);
+      s += `<line class="tick" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/><text x="${tx}" y="${ty + 3}" text-anchor="middle">${h}</text>`;
+    }
+    targets.forEach(t => { const [x, y] = pt(t, R); s += `<circle class="target" cx="${x}" cy="${y}" r="6"/>`; });
+    res.forEach(r => {
+      const rad = r.neutral ? 0 : clamp(r.C / maxC, 0.08, 1) * R;
+      const [x, y] = pt(r.h, rad);
+      if (r.neutral) return;
+      if (!r.hueOk) { const [tx, ty] = pt(r.nearest, R); s += `<line class="link" x1="${x}" y1="${y}" x2="${tx}" y2="${ty}"/>`; }
+      s += `<circle class="dot ${r.hueOk ? '' : 'bad'}" cx="${x}" cy="${y}" r="8" fill="${r.hex}"><title>${r.name ? esc(r.name) + ' · ' : ''}${r.hex} · ${r.h.toFixed(0)}°</title></circle>`;
+    });
+    els.wheel.innerHTML = s;
+  }
+
+  // ---------- Events ----------
+  $('run').addEventListener('click', analyze);
+  $('reset').addEventListener('click', () => { els.colors.value = DEFAULT.colors; els.bg.value = DEFAULT.bg; els.rule.value = 'auto'; els.tol.value = 12; els.wcag.value = '4.5'; els.ht.value = 0; els.hs.value = 0; els.cx.value = 35; analyze(); });
+  ['rule', 'wcag', 'bg'].forEach(id => $(id).addEventListener('change', analyze));
+  ['tol', 'ht', 'hs', 'cx'].forEach(id => $(id).addEventListener('input', analyze));
+  els.colors.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') analyze(); });
+  $('copyCss').addEventListener('click', () => copy(els.css.textContent));
+  $('copySvg').addEventListener('click', () => { if (lastRes && lastRes.length) copy(figmaSvg(lastRes)); });
+  $('copyJson').addEventListener('click', () => { if (lastRes && lastRes.length) copy(tokensJson(lastRes)); });
+  const toggleSel = hex => { selected = selected === hex ? null : hex; analyze(); };
+  els.cards.addEventListener('click', e => {
+    const sw = e.target.closest('[data-sel]');
+    if (sw) { toggleSel(sw.dataset.sel); return; }
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.copy) copy(b.dataset.copy);
+    if (b.dataset.surf !== undefined) {
+      const idx = +b.dataset.surf; const { out } = readPalette();
+      const on = !out[idx].surf;
+      els.colors.value = out.map((c, i) => lineOf({ ...c, surf: i === idx ? on : c.surf })).join('\n');
+      analyze(); toast(on ? 'Superficie: ' + label(out[idx]) : 'Ya no es superficie');
+      return;
+    }
+    if (b.dataset.pin !== undefined) {
+      const idx = +b.dataset.pin; const { out } = readPalette();
+      const on = !out[idx].pin;
+      els.colors.value = out.map((c, i) => lineOf({ ...c, pin: i === idx ? on : false })).join('\n');
+      analyze(); toast(on ? 'Ancla: ' + label(out[idx]) : 'Ancla liberada');
+      return;
+    }
+    if (b.dataset.apply !== undefined) {
+      const idx = +b.dataset.apply; const { out } = readPalette();
+      const lines = out.map((c, i) => lineOf({ ...c, hex: i === idx ? b.dataset.hex : c.hex }));
+      els.colors.value = lines.join('\n'); analyze(); toast('Aplicado ' + b.dataset.hex);
+    }
+  });
+
+  // ---------- Permalink ----------
+  function stateFromHash() {
+    if (location.hash.length < 2) return null;
+    const p = new URLSearchParams(location.hash.slice(1));
+    const lines = (p.get('c') || '').split(',').map(s => {
+      const surf = s.endsWith('@'); if (surf) s = s.slice(0, -1);
+      const pin = s.endsWith('*'); if (pin) s = s.slice(0, -1);
+      const [hx, ...n] = s.split(':');
+      const rgb = parseHex(hx); const name = slug(n.join(' '));
+      return rgb && toHex(rgb) + (name ? ' ' + name : '') + (pin ? ' *' : '') + (surf ? ' @' : '');
+    }).filter(Boolean);
+    if (!lines.length) return null;
+    const rule = p.get('r');
+    return {
+      colors: lines.join('\n'),
+      bg: toHex(parseHex(p.get('bg') || '') || parseHex(DEFAULT.bg)),
+      rule: rule === 'auto' || RULES[rule] ? rule : 'auto',
+      tol: clamp(+p.get('t') || 12, 4, 30),
+      wcag: ['3', '4.5', '7'].includes(p.get('w')) ? p.get('w') : '4.5',
+      ht: clamp(+p.get('ht') || 0, -30, 30),
+      hs: clamp(+p.get('hs') || 0, -30, 30),
+      cx: p.get('cx') === null ? 35 : clamp(+p.get('cx') || 0, 0, 100),
+      sel: parseHex(p.get('sel') || '') ? toHex(parseHex(p.get('sel'))) : null
+    };
+  }
+  function applyState(s) { els.colors.value = s.colors; els.bg.value = s.bg; els.rule.value = s.rule; els.tol.value = s.tol; els.wcag.value = s.wcag; els.ht.value = s.ht; els.hs.value = s.hs; els.cx.value = s.cx; selected = s.sel || null; }
+  window.addEventListener('hashchange', () => { const s = stateFromHash(); if (s) { applyState(s); analyze(); } });
+  $('share').addEventListener('click', () => { analyze(); copy(location.href); });
+
+  els.cards.addEventListener('keydown', e => {
+    const sw = e.target.closest('[data-sel]');
+    if (sw && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleSel(sw.dataset.sel); }
+  });
+
+  const fromHash = stateFromHash();
+  if (fromHash) applyState(fromHash);
+  else try {
+    const saved = JSON.parse(localStorage.getItem('afinador') || 'null');
+    if (saved && saved.colors) { els.colors.value = saved.colors; els.bg.value = saved.bg || DEFAULT.bg; els.rule.value = saved.rule || 'auto'; els.tol.value = saved.tol || 12; els.wcag.value = String(saved.wcag || '4.5'); els.ht.value = saved.ht || 0; els.hs.value = saved.hs || 0; els.cx.value = saved.cx == null ? 35 : saved.cx; selected = saved.sel || null; }
+  } catch (e) { }
+  analyze();
+
+  // ---------- Puente para el plugin de Figma ----------
+  // Expuesto en window: el plugin lee las corridas listas para escribir como
+  // variables y puede cargar una paleta leída de Figma.
+  window.afinador = {
+    families: () => (lastRes || []).map(r => ({ name: r.name || 'color', hex: r.hex, surf: r.surface, pin: r.pinned, home: (r.ramp.find(s => s.base) || {}).k, steps: r.ramp.map(s => ({ k: s.k, hex: toHex(oklchToRgb(s.c)) })) })),
+    load: lines => { els.colors.value = lines.map(lineOf).join('\n'); analyze(); }
+  };
+})();
+
+</script>
+<div id="figmaPanel" class="stack" style="border-top:1px solid var(--line);padding-top:14px">
+  <label class="lbl">Variables de Figma</label>
+  <div class="row">
+    <select id="fgCol" class="grow" aria-label="Colección"></select>
+    <select id="fgMode" class="grow" aria-label="Modo"></select>
+  </div>
+  <div class="row">
+    <button class="small" id="fgImport">Importar paleta</button>
+    <button class="small primary" id="fgUpdate">Actualizar variables</button>
+  </div>
+  <label class="row" style="font-size:12.5px;color:var(--muted)"><input type="checkbox" id="fgCreate" checked> Crear las que falten</label>
+  <p class="hint" id="fgStatus">Escribe cada paso en <code>colors/{familia}/{paso}</code>. Las semánticas (<code>primary</code>, <code>primary-tint</code>…) son alias y se actualizan solas.</p>
+</div>
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const post = m => parent.postMessage({ pluginMessage: m }, '*');
+  let cols = [];
+  const fillModes = () => { const c = cols.find(x => x.id === $('fgCol').value); $('fgMode').innerHTML = (c ? c.modes : []).map(m => `<option value="${m.id}">${m.name}</option>`).join(''); };
+  $('fgCol').addEventListener('change', fillModes);
+  $('fgImport').addEventListener('click', () => post({ type: 'import', collectionId: $('fgCol').value, modeId: $('fgMode').value }));
+  $('fgUpdate').addEventListener('click', () => {
+    const families = window.afinador.families();
+    $('fgStatus').textContent = 'Escribiendo ' + families.length * 11 + ' variables…';
+    post({ type: 'update', collectionId: $('fgCol').value, modeId: $('fgMode').value, families, createMissing: $('fgCreate').checked });
+  });
+  window.addEventListener('message', e => {
+    const m = e.data.pluginMessage; if (!m) return;
+    if (m.type === 'collections' && Array.isArray(m.collections)) {
+      cols = m.collections;
+      $('fgCol').innerHTML = cols.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+      const pref = cols.findIndex(c => /color/i.test(c.name)); if (pref > 0) $('fgCol').selectedIndex = pref;
+      fillModes();
+      if (!cols.length) $('fgStatus').textContent = 'Este archivo no tiene colecciones de variables; crea una (p. ej. "Colors") y vuelve a abrir el plugin.';
+    } else if (m.type === 'palette' && Array.isArray(m.palette)) {
+      if (!m.palette.length) { $('fgStatus').textContent = 'No encontré variables colors/{familia}/{paso} en esa colección.'; return; }
+      window.afinador.load(m.palette.map(p => ({ hex: p.hex, name: p.name, surf: p.surf, pin: false })));
+      $('fgStatus').textContent = 'Importadas ' + m.palette.length + ' familias. Marca el ancla si hace falta y vuelve a escribir.';
+    } else if (m.type === 'done' && m.result) {
+      $('fgStatus').textContent = `Listo: ${m.result.updated} actualizadas, ${m.result.created} creadas` + (m.result.skipped.length ? `, ${m.result.skipped.length} omitidas (no existían)` : '') + '.';
+    } else if (m.type === 'error') $('fgStatus').textContent = 'Error: ' + m.message;
+  });
+  post({ type: 'collections' });
+})();
+</script>
+
+<script>document.getElementById("figmaMount").replaceWith(document.getElementById("figmaPanel"));</script>
+</body>
+</html>

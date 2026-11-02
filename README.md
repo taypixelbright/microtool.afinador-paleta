@@ -15,6 +15,10 @@ Valida la armonía y el contraste de una paleta de colores en OKLCH y propone su
 - Genera una corrida 50–950 por color. El base aterriza en el escalón cuya luz ya tiene (un color oscuro vive en 700, uno claro en 200) en vez de forzarse al 500, así las escalas quedan homogéneas entre sí y los extremos llegan igual de claro / oscuro.
 - Exporta tokens `oklch()` listos para CSS.
 
+## Plugin de Figma
+
+En `figma-plugin/` está la misma herramienta como plugin, con importación y actualización de variables `colors/{familia}/{paso}`. Instrucciones en `figma-plugin/README.md`.
+
 ## Correr local
 
 Es un sitio estático sin build. Abre `index.html` o sirve la carpeta:

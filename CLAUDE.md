@@ -10,4 +10,5 @@ Microtool estático (sin build, sin dependencias). Todo el color se maneja en OK
 - Superficies: `@` tras el hex (campo `surf`) declara fondos; un color pasa contraste si lo cumple sobre al menos una, y se muestra el ratio sobre cada una. Sin `@`, el campo "Fondo" es la única superficie (fallback). Permalink: `hex:nombre*@`.
 - Acentos: ≤ un tercio de los cromáticos por encima de `ACCENT_RATIO` (1.9× mediana) son acento, no falla; se les ofrece un "compañero calmado", nunca bajarles el croma.
 - Umbrales: `NEUTRAL_C = 0.03` (gris, no se juzga tono), `SIMILAR = 0.08` (ΔE OK, "se parece a").
+- Plugin de Figma en `figma-plugin/`: `code.js` (sandbox, variables `colors/{familia}/{paso}`), `panel.html` (UI extra) y `build.js` que empaqueta todo en `ui.html`. Tras tocar app/style/index, correr `node figma-plugin/build.js` y commitear `ui.html`. `app.js` expone `window.afinador` ({families, load}) como puente.
 - Deploy: cada push a `main` corre `.github/workflows/pages.yml` y publica en GitHub Pages.

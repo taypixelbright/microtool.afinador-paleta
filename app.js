@@ -499,4 +499,12 @@
     if (saved && saved.colors) { els.colors.value = saved.colors; els.bg.value = saved.bg || DEFAULT.bg; els.rule.value = saved.rule || 'auto'; els.tol.value = saved.tol || 12; els.wcag.value = String(saved.wcag || '4.5'); els.ht.value = saved.ht || 0; els.hs.value = saved.hs || 0; els.cx.value = saved.cx == null ? 35 : saved.cx; selected = saved.sel || null; }
   } catch (e) { }
   analyze();
+
+  // ---------- Puente para el plugin de Figma ----------
+  // Expuesto en window: el plugin lee las corridas listas para escribir como
+  // variables y puede cargar una paleta leída de Figma.
+  window.afinador = {
+    families: () => (lastRes || []).map(r => ({ name: r.name || 'color', hex: r.hex, surf: r.surface, pin: r.pinned, home: (r.ramp.find(s => s.base) || {}).k, steps: r.ramp.map(s => ({ k: s.k, hex: toHex(oklchToRgb(s.c)) })) })),
+    load: lines => { els.colors.value = lines.map(lineOf).join('\n'); analyze(); }
+  };
 })();

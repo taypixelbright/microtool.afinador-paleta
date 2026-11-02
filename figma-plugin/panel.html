@@ -1,0 +1,45 @@
+<div id="figmaPanel" class="stack" style="border-top:1px solid var(--line);padding-top:14px">
+  <label class="lbl">Variables de Figma</label>
+  <div class="row">
+    <select id="fgCol" class="grow" aria-label="Colección"></select>
+    <select id="fgMode" class="grow" aria-label="Modo"></select>
+  </div>
+  <div class="row">
+    <button class="small" id="fgImport">Importar paleta</button>
+    <button class="small primary" id="fgUpdate">Actualizar variables</button>
+  </div>
+  <label class="row" style="font-size:12.5px;color:var(--muted)"><input type="checkbox" id="fgCreate" checked> Crear las que falten</label>
+  <p class="hint" id="fgStatus">Escribe cada paso en <code>colors/{familia}/{paso}</code>. Las semánticas (<code>primary</code>, <code>primary-tint</code>…) son alias y se actualizan solas.</p>
+</div>
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const post = m => parent.postMessage({ pluginMessage: m }, '*');
+  let cols = [];
+  const fillModes = () => { const c = cols.find(x => x.id === $('fgCol').value); $('fgMode').innerHTML = (c ? c.modes : []).map(m => `<option value="${m.id}">${m.name}</option>`).join(''); };
+  $('fgCol').addEventListener('change', fillModes);
+  $('fgImport').addEventListener('click', () => post({ type: 'import', collectionId: $('fgCol').value, modeId: $('fgMode').value }));
+  $('fgUpdate').addEventListener('click', () => {
+    const families = window.afinador.families();
+    $('fgStatus').textContent = 'Escribiendo ' + families.length * 11 + ' variables…';
+    post({ type: 'update', collectionId: $('fgCol').value, modeId: $('fgMode').value, families, createMissing: $('fgCreate').checked });
+  });
+  window.addEventListener('message', e => {
+    const m = e.data.pluginMessage; if (!m) return;
+    if (m.type === 'collections' && Array.isArray(m.collections)) {
+      cols = m.collections;
+      $('fgCol').innerHTML = cols.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+      const pref = cols.findIndex(c => /color/i.test(c.name)); if (pref > 0) $('fgCol').selectedIndex = pref;
+      fillModes();
+      if (!cols.length) $('fgStatus').textContent = 'Este archivo no tiene colecciones de variables; crea una (p. ej. "Colors") y vuelve a abrir el plugin.';
+    } else if (m.type === 'palette' && Array.isArray(m.palette)) {
+      if (!m.palette.length) { $('fgStatus').textContent = 'No encontré variables colors/{familia}/{paso} en esa colección.'; return; }
+      window.afinador.load(m.palette.map(p => ({ hex: p.hex, name: p.name, surf: p.surf, pin: false })));
+      $('fgStatus').textContent = 'Importadas ' + m.palette.length + ' familias. Marca el ancla si hace falta y vuelve a escribir.';
+    } else if (m.type === 'done' && m.result) {
+      $('fgStatus').textContent = `Listo: ${m.result.updated} actualizadas, ${m.result.created} creadas` + (m.result.skipped.length ? `, ${m.result.skipped.length} omitidas (no existían)` : '') + '.';
+    } else if (m.type === 'error') $('fgStatus').textContent = 'Error: ' + m.message;
+  });
+  post({ type: 'collections' });
+})();
+</script>
