@@ -783,7 +783,15 @@ img { max-width: 100%; }
     <button class="small primary" id="fgUpdate">Actualizar variables</button>
   </div>
   <label class="row" style="font-size:12.5px;color:var(--muted)"><input type="checkbox" id="fgCreate" checked> Crear las que falten</label>
-  <p class="hint" id="fgStatus">Escribe cada paso en <code>colors/{familia}/{paso}</code>. Las semánticas (<code>primary</code>, <code>primary-tint</code>…) son alias y se actualizan solas.</p>
+  <div class="row">
+    <label class="lbl" for="fgOff" style="margin:0;flex:1 1 120px">Alias tint / shade</label>
+    <select id="fgOff" class="grow" aria-label="Distancia de los alias tint y shade">
+      <option value="keep" selected>Conservar distancia actual</option>
+      <option value="2">±2 escalones</option>
+      <option value="3">±3 escalones</option>
+    </select>
+  </div>
+  <p class="hint" id="fgStatus">Escribe cada paso en <code>colors/{familia}/{paso}</code>. Los alias semánticos (<code>primary</code>, <code>-tint</code>, <code>-shade</code>) se re-apuntan: el base al escalón donde aterrizó y tint/shade a la distancia elegida; "conservar" mantiene la que cada familia tiene hoy.</p>
 </div>
 <script>
 (function () {
@@ -796,7 +804,7 @@ img { max-width: 100%; }
   $('fgUpdate').addEventListener('click', () => {
     const families = window.afinador.families();
     $('fgStatus').textContent = 'Escribiendo ' + families.length * 11 + ' variables…';
-    post({ type: 'update', collectionId: $('fgCol').value, modeId: $('fgMode').value, families, createMissing: $('fgCreate').checked });
+    post({ type: 'update', collectionId: $('fgCol').value, modeId: $('fgMode').value, families, createMissing: $('fgCreate').checked, offsets: $('fgOff').value });
   });
   window.addEventListener('message', e => {
     const m = e.data.pluginMessage; if (!m) return;
@@ -811,7 +819,7 @@ img { max-width: 100%; }
       window.afinador.load(m.palette.map(p => ({ hex: p.hex, name: p.name, surf: p.surf, pin: false })));
       $('fgStatus').textContent = 'Importadas ' + m.palette.length + ' familias. Marca el ancla si hace falta y vuelve a escribir.';
     } else if (m.type === 'done' && m.result) {
-      $('fgStatus').textContent = `Listo: ${m.result.updated} actualizadas, ${m.result.created} creadas` + (m.result.skipped.length ? `, ${m.result.skipped.length} omitidas (no existían)` : '') + '.';
+      $('fgStatus').textContent = `Listo: ${m.result.updated} actualizadas, ${m.result.created} creadas` + (m.result.skipped.length ? `, ${m.result.skipped.length} omitidas (no existían)` : '') + (m.result.aliases.length ? '. Alias: ' + m.result.aliases.join(', ') : '. Sin alias que re-apuntar') + '.';
     } else if (m.type === 'error') $('fgStatus').textContent = 'Error: ' + m.message;
   });
   post({ type: 'collections' });

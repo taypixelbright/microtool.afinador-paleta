@@ -17,8 +17,13 @@ Trabaja con la convención del archivo: una colección (p. ej. `Colors`) con var
   referencia la variable semántica `{familia}` si existe (alias); si no, el paso 500. `light` y
   `dark` entran marcadas como superficie (`@`).
 - **Actualizar variables**: escribe los 11 pasos de cada familia en su variable; con "Crear las
-  que falten" también crea las que no existan. Las semánticas (`primary`, `primary-tint`,
-  `primary-shade`…) no se tocan: son alias a los pasos y se actualizan solas.
+  que falten" también crea las que no existan. Después re-apunta los alias semánticos que ya
+  existan: `{familia}` al escalón donde aterrizó el base (el hex exacto que metiste),
+  `{familia}-tint` y `{familia}-shade` a la distancia elegida en "Alias tint / shade":
+  - **Conservar distancia actual** (default): lee a cuántos escalones estaba cada tint/shade de su
+    base anterior y mantiene esa misma distancia desde el base nuevo. Es lo que menos mueve el archivo.
+  - **±2 / ±3 escalones**: fija la distancia para todas las familias. Se recorta a 50/950.
+  Los alias no se crean; solo se re-apuntan si existen.
 
 El nombre de cada color en el afinador es el nombre de familia (`#C4305B primary`).
 
