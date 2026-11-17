@@ -22,7 +22,7 @@ async function importPalette(collectionId, modeId) {
   for (const v of vars) {
     if (v.variableCollectionId !== collectionId || !v.name.startsWith(PREFIX)) continue;
     const [, name, step] = v.name.split('/');
-    if (!name || !step) continue;
+    if (!name || !step || step === 'opacity') continue;
     (fam[name] = fam[name] || {})[step] = v;
   }
   const resolve = async (v) => {
@@ -49,6 +49,13 @@ const STEPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
 const stepIndex = k => STEPS.indexOf(+k);
 const clampStep = i => STEPS[Math.max(0, Math.min(STEPS.length - 1, i))];
 
+// Variantes de opacidad (convención CORE): colors/{familia}/opacity/{etiqueta}.
+// Familias normales: etiquetas 10…100 con alfa etiqueta/100. `dark` usa las
+// etiquetas de la rampa (50…950) con alfa lineal 0.10→1.00.
+const opacityLabels = famName => famName === 'dark'
+  ? STEPS.map((k, i) => ({ k, a: Math.round((0.10 + i * 0.09) * 100) / 100 }))
+  : Array.from({ length: 10 }, (_, i) => ({ k: (i + 1) * 10, a: (i + 1) / 10 }));
+
 // A qué paso apunta hoy un alias semántico ({familia}, -tint, -shade) de la
 // colección; null si no existe o no es alias a colors/{familia}/{paso}.
 async function aliasStep(v, modeId) {
@@ -69,7 +76,7 @@ async function updateVariables(collectionId, modeId, families, createMissing, of
   const vars = await figma.variables.getLocalVariablesAsync('COLOR');
   const byName = {}; vars.forEach(v => { if (v.variableCollectionId === collectionId) byName[v.name] = v; });
   const all = {}; vars.forEach(v => { all[v.name] = v; });
-  let updated = 0, created = 0, skipped = [], aliases = [];
+  let updated = 0, created = 0, skipped = [], aliases = [], opacity = 0;
   for (const f of families) {
     // Distancias actuales (antes de tocar nada) para el modo 'keep'.
     const semBase = all[f.name], semTint = all[f.name + '-tint'], semShade = all[f.name + '-shade'];
@@ -82,6 +89,33 @@ async function updateVariables(collectionId, modeId, families, createMissing, of
         v = figma.variables.createVariable(name, col, 'COLOR'); byName[name] = v; created++;
       } else updated++;
       v.setValueForMode(modeId, hexToRgb(s.hex));
+    }
+    // Variantes de opacidad: el color default de la corrida (el escalón donde
+    // aterrizó el base, el mismo al que apunta el alias {familia}) replicado
+    // con alfa creciente. Las existentes conservan su alfa; con "crear las que
+    // falten" se completa el juego canónico.
+    const homeK = f.home !== undefined ? f.home : 500;
+    const baseStep = f.steps.find(s => +s.k === +homeK) || f.steps.find(s => +s.k === 500);
+    if (baseStep) {
+      const rgb = hexToRgb(baseStep.hex);
+      const opPrefix = PREFIX + f.name + '/opacity/';
+      const seen = {};
+      for (const n of Object.keys(byName)) {
+        if (!n.startsWith(opPrefix)) continue;
+        const old = byName[n].valuesByMode[modeId];
+        const a = old && typeof old === 'object' && old.a !== undefined ? old.a : 1;
+        byName[n].setValueForMode(modeId, { r: rgb.r, g: rgb.g, b: rgb.b, a });
+        seen[n.slice(opPrefix.length)] = true; opacity++;
+      }
+      if (createMissing) {
+        for (const { k, a } of opacityLabels(f.name)) {
+          if (seen[String(k)]) continue;
+          const v = figma.variables.createVariable(opPrefix + k, col, 'COLOR');
+          byName[opPrefix + k] = v;
+          v.setValueForMode(modeId, { r: rgb.r, g: rgb.g, b: rgb.b, a });
+          opacity++; created++;
+        }
+      }
     }
     // Alias semánticos: el base al escalón donde aterrizó; tint y shade a la
     // distancia elegida. Solo se re-apuntan los que ya existen.
@@ -98,7 +132,7 @@ async function updateVariables(collectionId, modeId, families, createMissing, of
     point(semTint, clampStep(hi - dist(oldTint, 2)), f.name + '-tint');
     point(semShade, clampStep(hi + dist(oldShade, 2)), f.name + '-shade');
   }
-  return { updated, created, skipped, aliases };
+  return { updated, created, skipped, aliases, opacity };
 }
 
 figma.ui.onmessage = async msg => {
@@ -108,7 +142,7 @@ figma.ui.onmessage = async msg => {
     else if (msg.type === 'update') {
       const r = await updateVariables(msg.collectionId, msg.modeId, msg.families, msg.createMissing, msg.offsets || 'keep');
       figma.ui.postMessage({ type: 'done', result: r });
-      figma.notify(`Variables: ${r.updated} actualizadas, ${r.created} creadas${r.skipped.length ? ', ' + r.skipped.length + ' omitidas' : ''}; ${r.aliases.length} alias re-apuntados`);
+      figma.notify(`Variables: ${r.updated} actualizadas, ${r.created} creadas${r.skipped.length ? ', ' + r.skipped.length + ' omitidas' : ''}; ${r.opacity} de opacidad; ${r.aliases.length} alias re-apuntados`);
     }
     else if (msg.type === 'close') figma.closePlugin();
   } catch (e) { figma.ui.postMessage({ type: 'error', message: String(e.message || e) }); }

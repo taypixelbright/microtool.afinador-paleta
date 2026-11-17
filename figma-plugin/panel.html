@@ -17,7 +17,7 @@
       <option value="3">±3 escalones</option>
     </select>
   </div>
-  <p class="hint" id="fgStatus">Escribe cada paso en <code>colors/{familia}/{paso}</code>. Los alias semánticos (<code>primary</code>, <code>-tint</code>, <code>-shade</code>) se re-apuntan: el base al escalón donde aterrizó y tint/shade a la distancia elegida; "conservar" mantiene la que cada familia tiene hoy.</p>
+  <p class="hint" id="fgStatus">Escribe cada paso en <code>colors/{familia}/{paso}</code> y las variantes <code>colors/{familia}/opacity/*</code> con el color del escalón base (su alfa existente se conserva). Los alias semánticos (<code>primary</code>, <code>-tint</code>, <code>-shade</code>) se re-apuntan: el base al escalón donde aterrizó y tint/shade a la distancia elegida; "conservar" mantiene la que cada familia tiene hoy.</p>
 </div>
 <script>
 (function () {
@@ -45,7 +45,7 @@
       window.afinador.load(m.palette.map(p => ({ hex: p.hex, name: p.name, surf: p.surf, pin: false })));
       $('fgStatus').textContent = 'Importadas ' + m.palette.length + ' familias. Marca el ancla si hace falta y vuelve a escribir.';
     } else if (m.type === 'done' && m.result) {
-      $('fgStatus').textContent = `Listo: ${m.result.updated} actualizadas, ${m.result.created} creadas` + (m.result.skipped.length ? `, ${m.result.skipped.length} omitidas (no existían)` : '') + (m.result.aliases.length ? '. Alias: ' + m.result.aliases.join(', ') : '. Sin alias que re-apuntar') + '.';
+      $('fgStatus').textContent = `Listo: ${m.result.updated} actualizadas, ${m.result.created} creadas` + (m.result.skipped.length ? `, ${m.result.skipped.length} omitidas (no existían)` : '') + (m.result.opacity ? `, ${m.result.opacity} de opacidad` : '') + (m.result.aliases.length ? '. Alias: ' + m.result.aliases.join(', ') : '. Sin alias que re-apuntar') + '.';
     } else if (m.type === 'error') $('fgStatus').textContent = 'Error: ' + m.message;
   });
   post({ type: 'collections' });
