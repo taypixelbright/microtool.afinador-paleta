@@ -36,14 +36,15 @@
     const m = e.data.pluginMessage; if (!m) return;
     if (m.type === 'collections' && Array.isArray(m.collections)) {
       cols = m.collections;
-      $('fgCol').innerHTML = cols.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-      const pref = cols.findIndex(c => /color/i.test(c.name)); if (pref > 0) $('fgCol').selectedIndex = pref;
+      $('fgCol').innerHTML = cols.map(c => `<option value="${c.id}">${c.name} · ${c.colorVars} color${c.colorVars === 1 ? '' : 'es'}</option>`).join('');
+      const pref = cols.findIndex(c => /core|color/i.test(c.name)); if (pref >= 0) $('fgCol').selectedIndex = pref;
       fillModes();
-      if (!cols.length) $('fgStatus').textContent = 'Este archivo no tiene colecciones de variables; crea una (p. ej. "Colors") y vuelve a abrir el plugin.';
+      if (!cols.length) $('fgStatus').textContent = 'Este archivo no tiene colecciones con variables de color; crea una (p. ej. "CORE") y vuelve a abrir el plugin.';
     } else if (m.type === 'palette' && Array.isArray(m.palette)) {
-      if (!m.palette.length) { $('fgStatus').textContent = 'No encontré variables colors/{familia}/{paso} en esa colección.'; return; }
-      window.afinador.load(m.palette.map(p => ({ hex: p.hex, name: p.name, surf: p.surf, pin: false })));
-      $('fgStatus').textContent = 'Importadas ' + m.palette.length + ' familias. Marca el ancla si hace falta y vuelve a escribir.';
+      if (!m.palette.length) { $('fgStatus').textContent = 'Esa colección no tiene rampas {familia}/{paso} (pasos 50–950, con o sin grupo colors/).'; return; }
+      window.afinador.load(m.palette.map(p => ({ hex: p.hex, name: p.name, surf: p.surf, pin: false, homeK: p.home || null })));
+      const anchored = m.palette.filter(p => p.home !== null && p.home !== undefined).length;
+      $('fgStatus').textContent = 'Importadas ' + m.palette.length + ' familias' + (anchored ? ', ' + anchored + ' con su escalón base (!paso) tomado del alias semántico' : '') + '. Marca el ancla si hace falta y vuelve a escribir.';
     } else if (m.type === 'done' && m.result) {
       $('fgStatus').textContent = `Listo: ${m.result.updated} actualizadas, ${m.result.created} creadas` + (m.result.skipped.length ? `, ${m.result.skipped.length} omitidas (no existían)` : '') + (m.result.opacity ? `, ${m.result.opacity} de opacidad` : '') + (m.result.aliases.length ? '. Alias: ' + m.result.aliases.join(', ') : '. Sin alias que re-apuntar') + '.';
     } else if (m.type === 'error') $('fgStatus').textContent = 'Error: ' + m.message;

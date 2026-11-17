@@ -8,25 +8,33 @@ const PREFIX = 'colors/';
 const hexToRgb = hex => { const n = parseInt(hex.slice(1), 16); return { r: ((n >> 16) & 255) / 255, g: ((n >> 8) & 255) / 255, b: (n & 255) / 255 }; };
 const rgbToHex = c => '#' + [c.r, c.g, c.b].map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join('').toUpperCase();
 
+// Solo colecciones que tengan variables de color, con su conteo.
 async function listCollections() {
   const cols = await figma.variables.getLocalVariableCollectionsAsync();
-  return cols.map(c => ({ id: c.id, name: c.name, modes: c.modes.map(m => ({ id: m.modeId, name: m.name })) }));
+  const vars = await figma.variables.getLocalVariablesAsync('COLOR');
+  const count = {}; vars.forEach(v => { count[v.variableCollectionId] = (count[v.variableCollectionId] || 0) + 1; });
+  return cols.filter(c => count[c.id]).map(c => ({ id: c.id, name: c.name, colorVars: count[c.id], modes: c.modes.map(m => ({ id: m.modeId, name: m.name })) }));
 }
 
-// Lee `colors/{familia}/{paso}` y devuelve una paleta: por familia, el color
-// al que apunta la variable semántica `{familia}` si existe; si no, el 500.
+// Agrupa las variables COLOR de la colección en rampas `{familia}/{paso}`,
+// con o sin grupo de prefijo (colors/primary/500 y primary/500 valen igual;
+// opacity/* se ignora). Por familia devuelve el color base y, si la variable
+// semántica `{familia}` existe y es alias a un paso de su rampa, ese paso
+// como `home` para que el afinador no re-ancle el base por luz.
 async function importPalette(collectionId, modeId) {
   const vars = await figma.variables.getLocalVariablesAsync('COLOR');
   const byName = {}; vars.forEach(v => { byName[v.name] = v; });
   const fam = {};
   for (const v of vars) {
-    if (v.variableCollectionId !== collectionId || !v.name.startsWith(PREFIX)) continue;
-    const [, name, step] = v.name.split('/');
-    if (!name || !step || step === 'opacity') continue;
+    if (v.variableCollectionId !== collectionId) continue;
+    const parts = v.name.split('/');
+    if (parts.length < 2 || parts.includes('opacity')) continue;
+    const step = +parts[parts.length - 1], name = parts[parts.length - 2];
+    if (!STEPS.includes(step)) continue;
     (fam[name] = fam[name] || {})[step] = v;
   }
   const resolve = async (v) => {
-    let val = v.valuesByMode[modeId];
+    let val = v.valuesByMode[modeId] || Object.values(v.valuesByMode)[0];
     for (let i = 0; i < 8 && val && val.type === 'VARIABLE_ALIAS'; i++) {
       const t = await figma.variables.getVariableByIdAsync(val.id);
       if (!t) return null;
@@ -37,10 +45,11 @@ async function importPalette(collectionId, modeId) {
   const out = [];
   for (const name of Object.keys(fam)) {
     const sem = byName[name];
-    let hex = sem ? await resolve(sem) : null;
-    if (!hex && fam[name]['500']) hex = await resolve(fam[name]['500']);
-    if (!hex) { const any = Object.values(fam[name])[0]; hex = await resolve(any); }
-    if (hex) out.push({ name, hex, surf: /^(light|dark)$/.test(name) });
+    const home = await aliasStep(sem, modeId, name);
+    let hex = home !== null && fam[name][home] ? await resolve(fam[name][home]) : (sem ? await resolve(sem) : null);
+    if (!hex && fam[name][500]) hex = await resolve(fam[name][500]);
+    if (!hex) { const ks = Object.keys(fam[name]); hex = await resolve(fam[name][ks[Math.floor(ks.length / 2)]]); }
+    if (hex) out.push({ name, hex, surf: /^(light|dark)$/.test(name), home });
   }
   return out;
 }
@@ -58,15 +67,19 @@ const opacityLabels = famName => famName === 'dark'
   ? [{ k: 0, a: 0 }].concat(STEPS.map((k, i) => ({ k, a: Math.round((0.10 + i * 0.09) * 100) / 100 })))
   : Array.from({ length: 11 }, (_, i) => ({ k: i * 10, a: i / 10 }));
 
-// A qué paso apunta hoy un alias semántico ({familia}, -tint, -shade) de la
-// colección; null si no existe o no es alias a colors/{familia}/{paso}.
-async function aliasStep(v, modeId) {
+// A qué paso apunta hoy un alias semántico ({familia}, -tint, -shade); null
+// si no existe o no es alias a `…/{familia}/{paso}` (cualquier prefijo).
+async function aliasStep(v, modeId, famName) {
   if (!v) return null;
-  const val = v.valuesByMode[modeId];
+  const val = v.valuesByMode[modeId] || Object.values(v.valuesByMode)[0];
   if (!val || val.type !== 'VARIABLE_ALIAS') return null;
   const t = await figma.variables.getVariableByIdAsync(val.id);
-  const m = t && t.name.match(/^colors\/[^/]+\/(\d+)$/);
-  return m ? +m[1] : null;
+  if (!t) return null;
+  const parts = t.name.split('/');
+  const step = +parts[parts.length - 1];
+  if (!STEPS.includes(step)) return null;
+  if (famName && parts[parts.length - 2] !== famName) return null;
+  return step;
 }
 
 // Escribe cada paso en su variable (creándola si falta) en el modo elegido y
@@ -82,9 +95,17 @@ async function updateVariables(collectionId, modeId, families, createMissing, of
   for (const f of families) {
     // Distancias actuales (antes de tocar nada) para el modo 'keep'.
     const semBase = all[f.name], semTint = all[f.name + '-tint'], semShade = all[f.name + '-shade'];
-    const oldBase = await aliasStep(semBase, modeId), oldTint = await aliasStep(semTint, modeId), oldShade = await aliasStep(semShade, modeId);
+    const oldBase = await aliasStep(semBase, modeId, f.name), oldTint = await aliasStep(semTint, modeId, f.name), oldShade = await aliasStep(semShade, modeId, f.name);
+    // Prefijo real de la familia en la colección: si ya existe una rampa
+    // `…/{familia}/{paso}` (con el grupo que sea), se escribe sobre ella en
+    // vez de crear una paralela bajo colors/.
+    let famPrefix = PREFIX + f.name + '/';
+    for (const n of Object.keys(byName)) {
+      const parts = n.split('/');
+      if (parts.length >= 2 && parts[parts.length - 2] === f.name && STEPS.includes(+parts[parts.length - 1]) && !parts.includes('opacity')) { famPrefix = parts.slice(0, -1).join('/') + '/'; break; }
+    }
     for (const s of f.steps) {
-      const name = PREFIX + f.name + '/' + s.k;
+      const name = famPrefix + s.k;
       let v = byName[name];
       if (!v) {
         if (!createMissing) { skipped.push(name); continue; }
@@ -100,7 +121,7 @@ async function updateVariables(collectionId, modeId, families, createMissing, of
     const baseStep = f.steps.find(s => +s.k === +homeK) || f.steps.find(s => +s.k === 500);
     if (baseStep) {
       const rgb = hexToRgb(baseStep.hex);
-      const opPrefix = PREFIX + f.name + '/opacity/';
+      const opPrefix = famPrefix + 'opacity/';
       const seen = {};
       for (const n of Object.keys(byName)) {
         if (!n.startsWith(opPrefix)) continue;
@@ -125,7 +146,7 @@ async function updateVariables(collectionId, modeId, families, createMissing, of
     const hi = stepIndex(f.home);
     const dist = (old, def, sign) => offsets === 'keep' && oldBase !== null && old !== null ? Math.abs(stepIndex(old) - stepIndex(oldBase)) || def : (+offsets || def);
     const point = (sem, k, labelName) => {
-      const target = byName[PREFIX + f.name + '/' + k];
+      const target = byName[famPrefix + k];
       if (!sem || !target) return;
       sem.setValueForMode(modeId, figma.variables.createVariableAlias(target));
       aliases.push(labelName + ' → ' + k);

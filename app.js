@@ -131,7 +131,7 @@
     return STEPS.slice(1, -1).reduce((best, k) => Math.abs(stepL(k, r) - c.L) < Math.abs(stepL(best, r) - c.L) ? k : best, 500);
   }
   function ramp(c, o) {
-    const r = rangeFor(c), home = homeStep(c, r), Lh = stepL(home, r);
+    const r = rangeFor(c), home = c.homeK || homeStep(c, r), Lh = stepL(home, r);
     const surf = !!c.surf;
     return STEPS.map(k => {
       if (k === home) return { k, c: { L: c.L, C: c.C, h: c.h }, base: true };
@@ -163,7 +163,11 @@
     });
   }
 
-  const lineOf = c => c.hex + (c.name ? ' ' + c.name : '') + (c.pin ? ' *' : '') + (c.surf ? ' @' : '');
+  // Escalón fijado: `!800` tras el hex clava el base de la corrida en ese
+  // escalón (en vez del más cercano por luz). Nunca 50/950. Lo usa el import
+  // de Figma para no perder el escalón al que apunta el alias semántico.
+  const validHome = k => STEPS.indexOf(+k) > 0 && STEPS.indexOf(+k) < STEPS.length - 1;
+  const lineOf = c => c.hex + (c.name ? ' ' + c.name : '') + (c.pin ? ' *' : '') + (c.surf ? ' @' : '') + (c.homeK ? ' !' + c.homeK : '');
   function readPalette() {
     // Cada entrada (línea, coma o punto y coma) es un hex con nombre opcional: "#C9A96E arena".
     // Varios hex seguidos en una entrada siguen valiendo; el texto se pega al hex anterior.
@@ -181,6 +185,7 @@
         if (rgb) { push(cur, words); cur = { src: tok, hex: toHex(rgb), rgb, ...rgbToOklch(rgb), pin: false, surf: false }; words = []; }
         else if (cur && tok === '*') cur.pin = true;
         else if (cur && tok === '@') cur.surf = true;
+        else if (cur && /^!\d+$/.test(tok)) { const k = +tok.slice(1); if (validHome(k)) cur.homeK = k; }
         else if (cur) words.push(tok);
         else bad.push(tok);
       });
@@ -202,7 +207,7 @@
     try { localStorage.setItem('afinador', JSON.stringify({ colors: els.colors.value, bg: els.bg.value, rule: els.rule.value, tol, wcag: minC, ht: ro.ht, hs: ro.hs, cx: +els.cx.value, sel: selected })); } catch (e) { }
     // Permalink: el hash siempre refleja la paleta analizada (replaceState no ensucia el historial).
     try {
-      const share = new URLSearchParams({ c: colors.map(c => c.hex.slice(1) + (c.name ? ':' + c.name : '') + (c.pin ? '*' : '') + (c.surf ? '@' : '')).join(','), bg: toHex(bgRgb).slice(1), r: els.rule.value, t: tol, w: els.wcag.value, ht: ro.ht, hs: ro.hs, cx: els.cx.value });
+      const share = new URLSearchParams({ c: colors.map(c => c.hex.slice(1) + (c.name ? ':' + c.name : '') + (c.pin ? '*' : '') + (c.surf ? '@' : '') + (c.homeK ? '!' + c.homeK : '')).join(','), bg: toHex(bgRgb).slice(1), r: els.rule.value, t: tol, w: els.wcag.value, ht: ro.ht, hs: ro.hs, cx: els.cx.value });
       if (selected) share.set('sel', selected.slice(1));
       history.replaceState(null, '', colors.length ? '#' + share : location.pathname + location.search);
     } catch (e) { }
@@ -463,11 +468,12 @@
     if (location.hash.length < 2) return null;
     const p = new URLSearchParams(location.hash.slice(1));
     const lines = (p.get('c') || '').split(',').map(s => {
+      const hm = s.match(/!(\d+)$/); const homeK = hm && validHome(+hm[1]) ? +hm[1] : null; if (hm) s = s.slice(0, hm.index);
       const surf = s.endsWith('@'); if (surf) s = s.slice(0, -1);
       const pin = s.endsWith('*'); if (pin) s = s.slice(0, -1);
       const [hx, ...n] = s.split(':');
       const rgb = parseHex(hx); const name = slug(n.join(' '));
-      return rgb && toHex(rgb) + (name ? ' ' + name : '') + (pin ? ' *' : '') + (surf ? ' @' : '');
+      return rgb && toHex(rgb) + (name ? ' ' + name : '') + (pin ? ' *' : '') + (surf ? ' @' : '') + (homeK ? ' !' + homeK : '');
     }).filter(Boolean);
     if (!lines.length) return null;
     const rule = p.get('r');
