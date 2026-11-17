@@ -16,19 +16,51 @@ async function listCollections() {
   return cols.filter(c => count[c.id]).map(c => ({ id: c.id, name: c.name, colorVars: count[c.id], modes: c.modes.map(m => ({ id: m.modeId, name: m.name })) }));
 }
 
+// Punto negro del frame de swatches (convención cachito-palette): en una
+// página "Palette · …", cada fila `colors/{familia}` tiene una celda cuyo
+// swatch contiene una elipse (el punto); el texto numérico de esa celda es
+// el escalón base. Fallback para archivos sin alias semántico.
+async function swatchDots() {
+  const dots = {};
+  for (const page of figma.root.children) {
+    if (!/^palette\b/i.test(page.name)) continue;
+    try { if (page.loadAsync) await page.loadAsync(); } catch (e) { continue; }
+    for (const top of page.children) {
+      if (top.type !== 'FRAME' || !top.children) continue;
+      for (const row of top.children) {
+        if (row.type !== 'FRAME' || !/^colors\/[^/]+$/.test(row.name)) continue;
+        const famName = row.name.split('/')[1];
+        if (dots[famName] !== undefined) continue;
+        for (const cell of row.children) {
+          if (cell.type !== 'FRAME' || !cell.children) continue;
+          const sw = cell.children.find(c => c.type === 'FRAME' && c.children);
+          if (!sw || !sw.children.some(c => c.type === 'ELLIPSE')) continue;
+          const txt = cell.children.find(c => c.type === 'TEXT' && /^\d+$/.test(c.characters) && STEPS.includes(+c.characters));
+          if (txt) { dots[famName] = +txt.characters; break; }
+        }
+      }
+    }
+  }
+  return dots;
+}
+
 // Agrupa las variables COLOR de la colección en rampas `{familia}/{paso}`,
 // con o sin grupo de prefijo (colors/primary/500 y primary/500 valen igual;
-// opacity/* se ignora). Por familia devuelve el color base y, si la variable
-// semántica `{familia}` existe y es alias a un paso de su rampa, ese paso
-// como `home` para que el afinador no re-ancle el base por luz.
+// opacity/* aparte). Por familia devuelve el color base y su escalón `home`
+// para que el afinador no re-ancle el base por luz. El home se detecta en
+// este orden: alias semántico `{familia}` → el paso de la rampa cuyo color
+// coincide con las variantes de opacidad (que llevan el color del base) →
+// punto negro del frame de swatches.
 async function importPalette(collectionId, modeId) {
   const vars = await figma.variables.getLocalVariablesAsync('COLOR');
   const byName = {}; vars.forEach(v => { byName[v.name] = v; });
-  const fam = {};
+  const fam = {}, op = {};
   for (const v of vars) {
     if (v.variableCollectionId !== collectionId) continue;
     const parts = v.name.split('/');
-    if (parts.length < 2 || parts.includes('opacity')) continue;
+    const oi = parts.indexOf('opacity');
+    if (oi > 0) { const name = parts[oi - 1]; (op[name] = op[name] || []).push(v); continue; }
+    if (parts.length < 2) continue;
     const step = +parts[parts.length - 1], name = parts[parts.length - 2];
     if (!STEPS.includes(step)) continue;
     (fam[name] = fam[name] || {})[step] = v;
@@ -42,10 +74,24 @@ async function importPalette(collectionId, modeId) {
     }
     return val && val.r !== undefined ? rgbToHex(val) : null;
   };
+  // ¿Con qué paso único de la rampa coincide el color (RGB, sin alfa) de las
+  // variantes de opacidad de la familia? null si no hay o es ambiguo.
+  const opacityHome = async (name) => {
+    let opHex = null;
+    for (const v of op[name] || []) { opHex = await resolve(v); if (opHex) break; }
+    if (!opHex) return null;
+    const matches = [];
+    for (const k of Object.keys(fam[name])) if (await resolve(fam[name][k]) === opHex) matches.push(+k);
+    return matches.length === 1 ? matches[0] : null;
+  };
+  let dotsPromise = null;
+  const getDots = () => dotsPromise || (dotsPromise = swatchDots());
   const out = [];
   for (const name of Object.keys(fam)) {
     const sem = byName[name];
-    const home = await aliasStep(sem, modeId, name);
+    let home = await aliasStep(sem, modeId, name);
+    if (home === null) home = await opacityHome(name);
+    if (home === null) { try { home = (await getDots())[name]; } catch (e) { } if (home === undefined) home = null; }
     let hex = home !== null && fam[name][home] ? await resolve(fam[name][home]) : (sem ? await resolve(sem) : null);
     if (!hex && fam[name][500]) hex = await resolve(fam[name][500]);
     if (!hex) { const ks = Object.keys(fam[name]); hex = await resolve(fam[name][ks[Math.floor(ks.length / 2)]]); }
@@ -94,8 +140,16 @@ async function updateVariables(collectionId, modeId, families, createMissing, of
   let updated = 0, created = 0, skipped = [], aliases = [], opacity = 0;
   for (const f of families) {
     // Distancias actuales (antes de tocar nada) para el modo 'keep'.
-    const semBase = all[f.name], semTint = all[f.name + '-tint'], semShade = all[f.name + '-shade'];
+    let semBase = all[f.name], semTint = all[f.name + '-tint'], semShade = all[f.name + '-shade'];
     const oldBase = await aliasStep(semBase, modeId, f.name), oldTint = await aliasStep(semTint, modeId, f.name), oldShade = await aliasStep(semShade, modeId, f.name);
+    // Con "crear las que falten", los alias semánticos también se crean: así
+    // el archivo documenta su escalón base y el próximo import lo recupera.
+    if (createMissing && f.home !== undefined) {
+      const mk = n => { const v = figma.variables.createVariable(n, col, 'COLOR'); all[n] = v; created++; return v; };
+      if (!semBase) semBase = mk(f.name);
+      if (!semTint) semTint = mk(f.name + '-tint');
+      if (!semShade) semShade = mk(f.name + '-shade');
+    }
     // Prefijo real de la familia en la colección: si ya existe una rampa
     // `…/{familia}/{paso}` (con el grupo que sea), se escribe sobre ella en
     // vez de crear una paralela bajo colors/.

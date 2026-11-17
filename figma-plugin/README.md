@@ -15,10 +15,13 @@ color `{familia}/{paso}` donde paso ∈ 50, 100, 200 … 900, 950, con o sin gru
 (`colors/primary/500` y `primary/500` valen igual), en el modo que elijas. El selector solo
 lista colecciones que tengan variables de color.
 
-- **Importar paleta**: lee las familias de esa colección. El color base de cada una es el que
-  referencia la variable semántica `{familia}` si existe (alias); si no, el paso 500. Si el alias
-  apunta a un paso de la rampa, ese paso entra como escalón fijado (`!800`) para que el afinador
-  no re-ancle el base por luz. `light` y `dark` entran marcadas como superficie (`@`).
+- **Importar paleta**: lee las familias de esa colección. El escalón base de cada corrida se
+  detecta en este orden: (1) la variable semántica `{familia}` si existe y es alias a un paso de
+  su rampa; (2) el paso cuyo color coincide (RGB, sin alfa) con las variantes
+  `{familia}/opacity/*`, que llevan el color del base; (3) el punto negro del frame de swatches
+  (página `Palette · …` de cachito-palette). El paso detectado entra como escalón fijado (`!800`)
+  para que el afinador no re-ancle el base por luz; sin señal, cae al 500 sin anclar. `light` y
+  `dark` entran marcadas como superficie (`@`).
 - **Actualizar variables**: escribe los 11 pasos de cada familia en su variable, reutilizando el
   grupo que la familia ya tenga en la colección (`colors/` solo si es nueva); con "Crear las que
   falten" también crea las que no existan. Las variantes `{familia}/opacity/*` reciben el color
@@ -29,7 +32,8 @@ lista colecciones que tengan variables de color.
   - **Conservar distancia actual** (default): lee a cuántos escalones estaba cada tint/shade de su
     base anterior y mantiene esa misma distancia desde el base nuevo. Es lo que menos mueve el archivo.
   - **±2 / ±3 escalones**: fija la distancia para todas las familias. Se recorta a 50/950.
-  Los alias no se crean; solo se re-apuntan si existen.
+  Con "Crear las que falten" los alias semánticos también se crean si no existen: así el archivo
+  documenta su escalón base y el próximo import lo recupera directo.
 
 El nombre de cada color en el afinador es el nombre de familia (`#C4305B primary`).
 
