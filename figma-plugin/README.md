@@ -30,8 +30,11 @@ lista colecciones que tengan variables de color.
   existan: `{familia}` al escalón donde aterrizó el base (el hex exacto que metiste),
   `{familia}-tint` y `{familia}-shade` a la distancia elegida en "Alias tint / shade":
   - **Conservar distancia actual** (default): lee a cuántos escalones estaba cada tint/shade de su
-    base anterior y mantiene esa misma distancia desde el base nuevo. Es lo que menos mueve el archivo.
-  - **±2 / ±3 escalones**: fija la distancia para todas las familias. Se recorta a 50/950.
+    base anterior y mantiene esa misma distancia desde el base nuevo. Es lo que menos mueve el
+    archivo. Si el alias no existía, usa ±3 (la convención).
+  - **±3 / ±2 escalones**: fija la distancia para todas las familias.
+  En todos los casos, si la distancia se sale de la corrida se recorta al último paso (50/950):
+  el shade de un `!800` es el 950 y el tint de un `!200` es el 50, nunca negro/blanco absolutos.
   Con "Crear las que falten" los alias semánticos también se crean si no existen: así el archivo
   documenta su escalón base y el próximo import lo recupera directo.
 

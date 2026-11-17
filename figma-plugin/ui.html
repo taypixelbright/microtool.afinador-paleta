@@ -792,12 +792,12 @@ img { max-width: 100%; }
   <div class="row">
     <label class="lbl" for="fgOff" style="margin:0;flex:1 1 120px">Alias tint / shade</label>
     <select id="fgOff" class="grow" aria-label="Distancia de los alias tint y shade">
-      <option value="keep" selected>Conservar distancia actual</option>
-      <option value="2">±2 escalones</option>
+      <option value="keep" selected>Conservar distancia actual (±3 si son nuevos)</option>
       <option value="3">±3 escalones</option>
+      <option value="2">±2 escalones</option>
     </select>
   </div>
-  <p class="hint" id="fgStatus">Escribe cada paso en <code>colors/{familia}/{paso}</code> y las variantes <code>colors/{familia}/opacity/*</code> con el color del escalón base (su alfa existente se conserva). Los alias semánticos (<code>primary</code>, <code>-tint</code>, <code>-shade</code>) se re-apuntan: el base al escalón donde aterrizó y tint/shade a la distancia elegida; "conservar" mantiene la que cada familia tiene hoy.</p>
+  <p class="hint" id="fgStatus">Escribe cada paso en <code>colors/{familia}/{paso}</code> y las variantes <code>colors/{familia}/opacity/*</code> con el color del escalón base (su alfa existente se conserva). Los alias semánticos (<code>primary</code>, <code>-tint</code>, <code>-shade</code>) se re-apuntan: el base al escalón donde aterrizó y tint/shade a la distancia elegida; "conservar" mantiene la que cada familia tiene hoy (±3 si no existían). Si la distancia se sale de la corrida, se recorta al 50/950 para evitar blanco/negro absolutos.</p>
 </div>
 <script>
 (function () {

@@ -205,9 +205,12 @@ async function updateVariables(collectionId, modeId, families, createMissing, of
       sem.setValueForMode(modeId, figma.variables.createVariableAlias(target));
       aliases.push(labelName + ' → ' + k);
     };
+    // Convención: tint y shade al tercer escalón desde el base; si eso se
+    // sale de la corrida (p. ej. shade de un !800), clampStep lo recorta al
+    // último paso (50/950) para no caer en blanco/negro absolutos.
     point(semBase, f.home, f.name);
-    point(semTint, clampStep(hi - dist(oldTint, 2)), f.name + '-tint');
-    point(semShade, clampStep(hi + dist(oldShade, 2)), f.name + '-shade');
+    point(semTint, clampStep(hi - dist(oldTint, 3)), f.name + '-tint');
+    point(semShade, clampStep(hi + dist(oldShade, 3)), f.name + '-shade');
   }
   return { updated, created, skipped, aliases, opacity };
 }
