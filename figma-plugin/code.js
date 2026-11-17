@@ -50,11 +50,13 @@ const stepIndex = k => STEPS.indexOf(+k);
 const clampStep = i => STEPS[Math.max(0, Math.min(STEPS.length - 1, i))];
 
 // Variantes de opacidad (convención CORE): colors/{familia}/opacity/{etiqueta}.
-// Familias normales: etiquetas 10…100 con alfa etiqueta/100. `dark` usa las
-// etiquetas de la rampa (50…950) con alfa lineal 0.10→1.00.
+// Familias normales: etiquetas 0…100 con alfa etiqueta/100. `dark` usa las
+// etiquetas de la rampa (50…950) con alfa lineal 0.10→1.00, más un 0 con
+// alfa 0. El escalón 0 existe para casos como animaciones (fade desde/hacia
+// el color sin cambiar de variable).
 const opacityLabels = famName => famName === 'dark'
-  ? STEPS.map((k, i) => ({ k, a: Math.round((0.10 + i * 0.09) * 100) / 100 }))
-  : Array.from({ length: 10 }, (_, i) => ({ k: (i + 1) * 10, a: (i + 1) / 10 }));
+  ? [{ k: 0, a: 0 }].concat(STEPS.map((k, i) => ({ k, a: Math.round((0.10 + i * 0.09) * 100) / 100 })))
+  : Array.from({ length: 11 }, (_, i) => ({ k: i * 10, a: i / 10 }));
 
 // A qué paso apunta hoy un alias semántico ({familia}, -tint, -shade) de la
 // colección; null si no existe o no es alias a colors/{familia}/{paso}.
